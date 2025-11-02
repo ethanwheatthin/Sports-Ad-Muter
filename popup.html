@@ -118,6 +118,58 @@
       background-color: #0056b3;
     }
     
+    .test-btn {
+      background-color: #17a2b8;
+      color: white;
+    }
+    
+    .test-btn:hover {
+      background-color: #138496;
+    }
+    
+    .test-btn:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    
+    .reset-btn {
+      background-color: #ffc107;
+      color: #212529;
+    }
+    
+    .reset-btn:hover {
+      background-color: #e0a800;
+    }
+    
+    .reset-btn:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    
+    .connection-status {
+      padding: 8px;
+      border-radius: 4px;
+      margin: 8px 0;
+      text-align: center;
+      font-weight: 500;
+      font-size: 12px;
+    }
+    
+    .connection-status.success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    
+    .connection-status.error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    
+    .connection-status.testing {
+      background-color: #d1ecf1;
+      color: #0c5460;
+    }
+    
     .logs-section {
       margin-top: 20px;
       border-top: 1px solid #ddd;
@@ -208,7 +260,7 @@
   </style>
 </head>
 <body>
-  <h1>⚽ Football Ad Muter</h1>
+  <h1>🏈🔇 Football Ad Muter</h1>
   
   <div class="section">
     <label for="ollamaUrl">Ollama API URL:</label>
@@ -218,11 +270,19 @@
   
   <div class="section">
     <label for="checkInterval">Check Interval (seconds):</label>
-    <input type="number" id="checkInterval" min="1" max="10" step="0.5" placeholder="3">
-    <div class="info">How often to check (1-10 seconds)</div>
+    <input type="number" id="checkInterval" min="1" max="60" step="0.5" placeholder="3">
+    <div class="info">How often to check (1-60 seconds)</div>
   </div>
   
   <button class="save-btn" id="saveBtn">Save Settings</button>
+  
+  <div class="section">
+    <div class="button-group">
+      <button id="testApiBtn" class="test-btn">Test API Connection</button>
+      <button id="resetVideoBtn" class="reset-btn">Reset Video Player</button>
+    </div>
+    <div id="connectionStatus" class="connection-status" style="display: none;"></div>
+  </div>
   
   <div class="button-group">
     <button id="startBtn">Start Monitoring</button>

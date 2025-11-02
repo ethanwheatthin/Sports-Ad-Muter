@@ -56,6 +56,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       startMonitoring();
     }
     sendResponse({ status: 'updated' });
+  } else if (request.action === 'resetVideo') {
+    console.log('[Football Ad Muter] Reset video command received');
+    resetVideoPlayer();
+    sendResponse({ status: 'reset' });
   }
   return false;
 });
@@ -258,6 +262,54 @@ function captureAndAnalyzeVideo(video) {
 }
 
 
+
+function resetVideoPlayer() {
+  console.log('[Football Ad Muter] Resetting video player...');
+  
+  const videos = Array.from(document.querySelectorAll('video'));
+  console.log('[Football Ad Muter] Found', videos.length, 'video elements to reset');
+  
+  if (videos.length === 0) {
+    console.log('[Football Ad Muter] No video elements found to reset');
+    return;
+  }
+  
+  videos.forEach((video, index) => {
+    console.log(`[Football Ad Muter] Resetting video ${index + 1}...`);
+    
+    // Remove any extension-specific data attributes
+    if (video.dataset.mutedByExtension) {
+      delete video.dataset.mutedByExtension;
+      console.log(`[Football Ad Muter] Removed mutedByExtension flag from video ${index + 1}`);
+    }
+    
+    // Unmute the video if it's currently muted
+    if (video.muted) {
+      video.muted = false;
+      console.log(`[Football Ad Muter] Unmuted video ${index + 1}`);
+    }
+    
+    // Reset volume to a reasonable level if it's very low
+    if (video.volume < 0.1) {
+      video.volume = 0.8;
+      console.log(`[Football Ad Muter] Reset volume to 0.8 for video ${index + 1}`);
+    }
+    
+    // If the video is paused and has some duration, try to resume playback
+    if (video.paused && video.duration > 0 && video.currentTime > 0) {
+      try {
+        video.play();
+        console.log(`[Football Ad Muter] Resumed playback for video ${index + 1}`);
+      } catch (error) {
+        console.log(`[Football Ad Muter] Could not resume playback for video ${index + 1}:`, error.message);
+      }
+    }
+  });
+  
+  // Log the reset action
+  saveLogEntry(null, `Video player reset - ${videos.length} video(s) processed`);
+  console.log('[Football Ad Muter] Video player reset complete');
+}
 
 function saveLogEntry(result, action) {
   const logEntry = {

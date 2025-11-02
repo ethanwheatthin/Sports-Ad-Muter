@@ -24,7 +24,7 @@ chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.sync.set({
     ollamaUrl: 'http://localhost:11434',
-    checkInterval: 3000,
+    checkInterval: 3000, // 3 seconds default (can be set up to 60 seconds)
     isEnabled: false
   });
   
@@ -67,8 +67,84 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false; // No response needed
   }
   
+  if (request.action === 'testApiConnection') {
+    console.log('[Football Ad Muter Background] API connection test requested');
+    
+    // Handle async operation properly
+    testOllamaConnection(request.ollamaUrl)
+      .then(result => {
+        console.log('[Football Ad Muter Background] API test complete:', result);
+        sendResponse({ result: result, error: null });
+      })
+      .catch(error => {
+        console.error('[Football Ad Muter Background] API test failed:', error);
+        sendResponse({ result: null, error: error.message });
+      });
+    
+    return true; // Keep the message channel open for async response
+  }
+  
   return false; // Default case
 });
+
+async function testOllamaConnection(ollamaUrl) {
+  try {
+    console.log('[Football Ad Muter Background] 🔍 Testing Ollama API connection...');
+    console.log('[Football Ad Muter Background] Testing URL:', `${ollamaUrl}/api/tags`);
+    
+    // Add timeout and better error handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout for connection test
+    
+    // Test basic connectivity
+    const response = await fetch(`${ollamaUrl}/api/tags`, {
+      method: 'GET',
+      mode: 'cors',
+      headers: {
+        'Accept': 'application/json'
+      },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    console.log('[Football Ad Muter Background] API test response status:', response.status, response.statusText);
+    console.log('[Football Ad Muter Background] CORS headers:', {
+      'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+      'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
+      'access-control-allow-headers': response.headers.get('access-control-allow-headers')
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Football Ad Muter Background] API test failed:', response.status, errorText);
+      throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log('[Football Ad Muter Background] API test response:', data);
+    
+    // Check if the required model is available
+    const hasRequiredModel = data.models && data.models.some(model => 
+      model.name.includes('qwen3-vl:2b') || model.name.includes('qwen3-vl')
+    );
+    
+    return {
+      connected: true,
+      hasRequiredModel: hasRequiredModel,
+      availableModels: data.models ? data.models.map(m => m.name) : []
+    };
+    
+  } catch (error) {
+    console.error('[Football Ad Muter Background] 💥 Error testing Ollama API:', error);
+    console.error('[Football Ad Muter Background] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      apiUrl: `${ollamaUrl}/api/tags`
+    });
+    throw error;
+  }
+}
 
 async function analyzeWithOllama(base64Image, ollamaUrl) {
   try {
@@ -87,14 +163,14 @@ Return "true" if the image contains:
 - Scoreboard visible with game clock/score during active play
 - Typical sports broadcast camera angles showing the action
 - Live competition in progress
+- Studio analysts or commentators
+- Replays with obvious overlay graphics
+- Sideline interviews
 
 Return "false" if the image contains:
 - Commercials or advertisements
-- Studio analysts or commentators
-- Replays with obvious overlay graphics
 - Halftime shows or entertainment
 - Pre-game or post-game coverage
-- Sideline interviews
 - Press conferences
 - Crowd shots without gameplay
 - Loading screens or channel logos

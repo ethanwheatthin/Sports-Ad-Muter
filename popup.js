@@ -33,6 +33,13 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   const ollamaUrl = document.getElementById('ollamaUrl').value;
   // Convert seconds to milliseconds for storage
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
+  
+  // Validate check interval (1-60 seconds)
+  if (checkIntervalSeconds < 1 || checkIntervalSeconds > 60) {
+    alert('Check interval must be between 1 and 60 seconds');
+    return;
+  }
+  
   const checkInterval = checkIntervalSeconds * 1000;
   
   console.log('[Football Ad Muter Popup] Saving settings:', { ollamaUrl, checkInterval: checkInterval + 'ms (' + checkIntervalSeconds + 's)' });
@@ -132,6 +139,99 @@ document.getElementById('clearLogsBtn').addEventListener('click', () => {
   chrome.storage.sync.set({ analysisLogs: [] }, () => {
     console.log('[Football Ad Muter Popup] Logs cleared from storage');
     loadLogs();
+  });
+});
+
+// Test API connection
+document.getElementById('testApiBtn').addEventListener('click', () => {
+  console.log('[Football Ad Muter Popup] Test API button clicked');
+  const testBtn = document.getElementById('testApiBtn');
+  const statusDiv = document.getElementById('connectionStatus');
+  const ollamaUrl = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
+  
+  // Update UI to show testing state
+  testBtn.disabled = true;
+  testBtn.textContent = 'Testing...';
+  statusDiv.style.display = 'block';
+  statusDiv.className = 'connection-status testing';
+  statusDiv.textContent = 'Testing connection to Ollama API...';
+  
+  console.log('[Football Ad Muter Popup] Sending API test request to background script');
+  
+  // Send test request to background script
+  chrome.runtime.sendMessage({
+    action: 'testApiConnection',
+    ollamaUrl: ollamaUrl
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter Popup] Runtime error during API test:', chrome.runtime.lastError);
+      statusDiv.className = 'connection-status error';
+      statusDiv.textContent = '❌ Extension error: ' + chrome.runtime.lastError.message;
+    } else if (response.error) {
+      console.error('[Football Ad Muter Popup] API test failed:', response.error);
+      statusDiv.className = 'connection-status error';
+      
+      if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
+        statusDiv.textContent = '❌ Cannot connect to Ollama. Make sure it\'s running and CORS is enabled.';
+      } else {
+        statusDiv.textContent = `❌ Connection failed: ${response.error}`;
+      }
+    } else if (response.result) {
+      console.log('[Football Ad Muter Popup] API test successful:', response.result);
+      
+      if (response.result.hasRequiredModel) {
+        statusDiv.className = 'connection-status success';
+        statusDiv.textContent = '✅ Connection successful! qwen3-vl model is available.';
+      } else {
+        statusDiv.className = 'connection-status error';
+        statusDiv.textContent = '⚠️ Connected, but qwen3-vl:2b model not found. Please install it with: ollama pull qwen3-vl:2b';
+      }
+    } else {
+      statusDiv.className = 'connection-status error';
+      statusDiv.textContent = '❌ Unexpected response from API test';
+    }
+    
+    // Reset button state
+    testBtn.disabled = false;
+    testBtn.textContent = 'Test API Connection';
+    
+    // Hide status after 10 seconds
+    setTimeout(() => {
+      statusDiv.style.display = 'none';
+    }, 10000);
+  });
+});
+
+// Reset video player
+document.getElementById('resetVideoBtn').addEventListener('click', () => {
+  console.log('[Football Ad Muter Popup] Reset video button clicked');
+  const resetBtn = document.getElementById('resetVideoBtn');
+  const statusDiv = document.getElementById('connectionStatus');
+  
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      console.log('[Football Ad Muter Popup] Sending reset command to tab:', tabs[0].id);
+      chrome.tabs.sendMessage(tabs[0].id, { action: 'resetVideo' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Football Ad Muter Popup] Error resetting video:', chrome.runtime.lastError);
+          statusDiv.style.display = 'block';
+          statusDiv.className = 'connection-status error';
+          statusDiv.textContent = '❌ Cannot reset video. Make sure you are on a webpage with video content.';
+          setTimeout(() => statusDiv.style.display = 'none', 5000);
+          return;
+        }
+        
+        console.log('[Football Ad Muter Popup] Reset response:', response);
+        if (response && response.status === 'reset') {
+          statusDiv.style.display = 'block';
+          statusDiv.className = 'connection-status success';
+          statusDiv.textContent = '✅ Video player reset successfully!';
+          setTimeout(() => statusDiv.style.display = 'none', 3000);
+        }
+      });
+    } else {
+      console.error('[Football Ad Muter Popup] No active tab found for reset command');
+    }
   });
 });
 
