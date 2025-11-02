@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Football Ad Muter - Connection Debug</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background-color: #f5f5f5;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section { 
+            margin: 15px 0; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px;
+        }
+        .status { 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-radius: 4px; 
+            font-weight: bold;
+        }
+        .success { 
+            background-color: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb;
+        }
+        .error { 
+            background-color: #f8d7da; 
+            color: #721c24; 
+            border: 1px solid #f5c6cb;
+        }
+        .info { 
+            background-color: #d1ecf1; 
+            color: #0c5460; 
+            border: 1px solid #bee5eb;
+        }
+        button { 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 8px 16px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        button:hover { 
+            background-color: #0056b3; 
+        }
+        button:disabled { 
+            background-color: #6c757d; 
+            cursor: not-allowed;
+        }
+        #log { 
+            background-color: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            padding: 15px; 
+            max-height: 300px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏈 Football Ad Muter - Connection Debug</h1>
+        <p>Use this page to test the connection between different parts of the extension.</p>
+        
+        <div class="test-section">
+            <h3>1. Background Script Connection Test</h3>
+            <button onclick="testBackgroundConnection()">Test Background Script</button>
+            <div id="backgroundStatus" class="status info">Click test button to check connection</div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. Content Script Communication Test</h3>
+            <button onclick="testContentScript()">Test Content Script</button>
+            <div id="contentStatus" class="status info">Click test button to check content script</div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. Storage Access Test</h3>
+            <button onclick="testStorage()">Test Storage</button>
+            <div id="storageStatus" class="status info">Click test button to check storage access</div>
+        </div>
+        
+        <div class="test-section">
+            <h3>4. Extension Info</h3>
+            <button onclick="showExtensionInfo()">Show Extension Info</button>
+            <div id="extensionInfo" class="status info">Click button to show extension information</div>
+        </div>
+        
+        <div class="test-section">
+            <h3>5. Debug Log</h3>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.textContent += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[Debug] ${message}`);
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = '';
+        }
+
+        function testBackgroundConnection() {
+            log('Testing background script connection...');
+            const statusDiv = document.getElementById('backgroundStatus');
+            statusDiv.textContent = 'Testing...';
+            statusDiv.className = 'status info';
+            
+            chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    log(`❌ Background script error: ${chrome.runtime.lastError.message}`);
+                    statusDiv.textContent = `❌ Error: ${chrome.runtime.lastError.message}`;
+                    statusDiv.className = 'status error';
+                } else if (response && response.status === 'pong') {
+                    log('✅ Background script is responsive');
+                    statusDiv.textContent = '✅ Background script is working correctly';
+                    statusDiv.className = 'status success';
+                } else {
+                    log('❌ Background script returned unexpected response');
+                    statusDiv.textContent = '❌ Unexpected response from background script';
+                    statusDiv.className = 'status error';
+                }
+            });
+        }
+
+        function testContentScript() {
+            log('Testing content script communication...');
+            const statusDiv = document.getElementById('contentStatus');
+            statusDiv.textContent = 'Testing...';
+            statusDiv.className = 'status info';
+            
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (!tabs[0]) {
+                    log('❌ No active tab found');
+                    statusDiv.textContent = '❌ No active tab found';
+                    statusDiv.className = 'status error';
+                    return;
+                }
+                
+                chrome.tabs.sendMessage(tabs[0].id, { action: 'ping' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        log(`❌ Content script error: ${chrome.runtime.lastError.message}`);
+                        statusDiv.textContent = `❌ Content script not available (normal if not on a compatible page)`;
+                        statusDiv.className = 'status info';
+                    } else {
+                        log('✅ Content script is responsive');
+                        statusDiv.textContent = '✅ Content script is working correctly';
+                        statusDiv.className = 'status success';
+                    }
+                });
+            });
+        }
+
+        function testStorage() {
+            log('Testing storage access...');
+            const statusDiv = document.getElementById('storageStatus');
+            statusDiv.textContent = 'Testing...';
+            statusDiv.className = 'status info';
+            
+            try {
+                chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) => {
+                    if (chrome.runtime.lastError) {
+                        log(`❌ Storage error: ${chrome.runtime.lastError.message}`);
+                        statusDiv.textContent = `❌ Storage error: ${chrome.runtime.lastError.message}`;
+                        statusDiv.className = 'status error';
+                    } else {
+                        log('✅ Storage access successful');
+                        log(`Settings: ${JSON.stringify(result, null, 2)}`);
+                        statusDiv.textContent = '✅ Storage is working correctly';
+                        statusDiv.className = 'status success';
+                    }
+                });
+            } catch (error) {
+                log(`❌ Storage exception: ${error.message}`);
+                statusDiv.textContent = `❌ Storage exception: ${error.message}`;
+                statusDiv.className = 'status error';
+            }
+        }
+
+        function showExtensionInfo() {
+            log('Gathering extension information...');
+            const statusDiv = document.getElementById('extensionInfo');
+            
+            try {
+                const manifest = chrome.runtime.getManifest();
+                const extensionId = chrome.runtime.id;
+                
+                const info = {
+                    'Extension ID': extensionId,
+                    'Name': manifest.name,
+                    'Version': manifest.version,
+                    'Manifest Version': manifest.manifest_version,
+                    'Permissions': manifest.permissions,
+                    'Host Permissions': manifest.host_permissions
+                };
+                
+                log('Extension Info:');
+                Object.entries(info).forEach(([key, value]) => {
+                    log(`  ${key}: ${Array.isArray(value) ? value.join(', ') : value}`);
+                });
+                
+                statusDiv.textContent = '✅ Extension info logged above';
+                statusDiv.className = 'status success';
+            } catch (error) {
+                log(`❌ Error getting extension info: ${error.message}`);
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+                statusDiv.className = 'status error';
+            }
+        }
+
+        // Initialize
+        log('Debug page loaded');
+        log('You can use this page to test extension connectivity');
+    </script>
+</body>
+</html>

@@ -31,7 +31,11 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) =>
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Football Ad Muter] Received message from popup:', request);
   
-  if (request.action === 'start') {
+  if (request.action === 'ping') {
+    console.log('[Football Ad Muter] Ping received from debug page');
+    sendResponse({ status: 'pong' });
+    return false;
+  } else if (request.action === 'start') {
     console.log('[Football Ad Muter] Start command received');
     startMonitoring();
     sendResponse({ status: 'started' });
@@ -53,7 +57,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     sendResponse({ status: 'updated' });
   }
-  return true;
+  return false;
 });
 
 function startMonitoring() {
@@ -172,7 +176,7 @@ function captureAndAnalyzeVideo(video) {
         try {
           console.log('[Football Ad Muter] Sending message to background script...');
           
-          const response = await new Promise((resolve) => {
+          const response = await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({
               action: 'analyzeImage',
               base64Image: base64Image,
@@ -180,7 +184,7 @@ function captureAndAnalyzeVideo(video) {
             }, (response) => {
               if (chrome.runtime.lastError) {
                 console.error('[Football Ad Muter] Runtime error:', chrome.runtime.lastError);
-                resolve({ error: chrome.runtime.lastError.message });
+                reject(new Error(chrome.runtime.lastError.message));
               } else {
                 resolve(response);
               }
@@ -237,7 +241,11 @@ function captureAndAnalyzeVideo(video) {
           
         } catch (messageError) {
           console.error('[Football Ad Muter] Error sending message to background:', messageError);
-          saveLogEntry(null, `Message Error: ${messageError.message}`);
+          if (messageError.message.includes('Receiving end does not exist')) {
+            saveLogEntry(null, 'Background script unavailable - try reloading the extension');
+          } else {
+            saveLogEntry(null, `Message Error: ${messageError.message}`);
+          }
         }
       };
       reader.readAsDataURL(blob);
@@ -272,9 +280,15 @@ function saveLogEntry(result, action) {
     chrome.storage.sync.set({ analysisLogs: trimmedLogs }, () => {
       console.log('[Football Ad Muter] Log entry saved to storage');
       // Notify popup to refresh logs if it's open
-      chrome.runtime.sendMessage({ action: 'logUpdate' }).catch(() => {
-        console.log('[Football Ad Muter] Could not notify popup (probably not open)');
-      });
+      try {
+        chrome.runtime.sendMessage({ action: 'logUpdate' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.log('[Football Ad Muter] Could not notify popup (probably not open)');
+          }
+        });
+      } catch (error) {
+        console.log('[Football Ad Muter] Could not notify popup:', error.message);
+      }
     });
   });
 }

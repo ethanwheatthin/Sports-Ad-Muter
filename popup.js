@@ -6,7 +6,9 @@ let isMonitoring = false;
 chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLogs'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
   document.getElementById('ollamaUrl').value = result.ollamaUrl || 'http://localhost:11434';
-  document.getElementById('checkInterval').value = result.checkInterval || 3000;
+  // Convert milliseconds to seconds for display
+  const intervalMs = result.checkInterval || 3000;
+  document.getElementById('checkInterval').value = intervalMs / 1000;
   isMonitoring = result.isEnabled || false;
   console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring);
   updateUI();
@@ -14,6 +16,10 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLog
   
   // Test background script connection
   chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter Popup] ❌ Background script connection error:', chrome.runtime.lastError);
+      return;
+    }
     if (response && response.status === 'pong') {
       console.log('[Football Ad Muter Popup] ✅ Background script is responsive');
     } else {
@@ -25,9 +31,11 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLog
 // Save settings
 document.getElementById('saveBtn').addEventListener('click', () => {
   const ollamaUrl = document.getElementById('ollamaUrl').value;
-  const checkInterval = parseInt(document.getElementById('checkInterval').value);
+  // Convert seconds to milliseconds for storage
+  const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
+  const checkInterval = checkIntervalSeconds * 1000;
   
-  console.log('[Football Ad Muter Popup] Saving settings:', { ollamaUrl, checkInterval });
+  console.log('[Football Ad Muter Popup] Saving settings:', { ollamaUrl, checkInterval: checkInterval + 'ms (' + checkIntervalSeconds + 's)' });
   
   chrome.storage.sync.set({
     ollamaUrl: ollamaUrl,
@@ -41,6 +49,12 @@ document.getElementById('saveBtn').addEventListener('click', () => {
           action: 'updateSettings',
           ollamaUrl: ollamaUrl,
           checkInterval: checkInterval
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.log('[Football Ad Muter Popup] Content script not available (normal if not on a compatible page)');
+          } else {
+            console.log('[Football Ad Muter Popup] Settings update sent successfully:', response);
+          }
         });
       } else {
         console.log('[Football Ad Muter Popup] No active tab found for settings update');
@@ -64,6 +78,11 @@ document.getElementById('startBtn').addEventListener('click', () => {
     if (tabs[0]) {
       console.log('[Football Ad Muter Popup] Sending start command to tab:', tabs[0].id);
       chrome.tabs.sendMessage(tabs[0].id, { action: 'start' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Football Ad Muter Popup] Error starting monitoring:', chrome.runtime.lastError);
+          alert('Error: Cannot start monitoring. Make sure you are on a webpage with video content.');
+          return;
+        }
         console.log('[Football Ad Muter Popup] Start response:', response);
         if (response && response.status === 'started') {
           isMonitoring = true;
@@ -85,6 +104,14 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     if (tabs[0]) {
       console.log('[Football Ad Muter Popup] Sending stop command to tab:', tabs[0].id);
       chrome.tabs.sendMessage(tabs[0].id, { action: 'stop' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Football Ad Muter Popup] Error stopping monitoring:', chrome.runtime.lastError);
+          // Still update UI since the error might mean content script isn't running anyway
+          isMonitoring = false;
+          chrome.storage.sync.set({ isEnabled: false });
+          updateUI();
+          return;
+        }
         console.log('[Football Ad Muter Popup] Stop response:', response);
         if (response && response.status === 'stopped') {
           isMonitoring = false;
@@ -136,18 +163,18 @@ function loadLogs() {
 
 function displayLogs(logs) {
   const container = document.getElementById('logsContainer');
-  
+
   console.log('[Football Ad Muter Popup] Displaying logs, total count:', logs.length);
-  
+
   if (logs.length === 0) {
     container.innerHTML = '<div class="no-logs">No logs available. Start monitoring to see analysis results.</div>';
     return;
   }
-  
+
   // Show most recent logs first (reverse chronological order)
   const recentLogs = logs.slice(-20).reverse();
   console.log('[Football Ad Muter Popup] Showing', recentLogs.length, 'recent logs');
-  
+
   container.innerHTML = recentLogs.map(log => {
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
     const resultClass = log.result === true ? 'log-gameplay' : 
@@ -155,17 +182,23 @@ function displayLogs(logs) {
     const resultText = log.result === true ? '✓ Gameplay detected' :
                       log.result === false ? '⚠ Advertisement detected' :
                       'Nothing to report Yet';
-    
+
     let actionText = '';
     if (log.action) {
       actionText = `<div class="log-action">${log.action}</div>`;
     }
-    
+
+    let imageLink = '';
+    if (log.imageUrl) {
+      imageLink = `<div class="log-image"><a href="${log.imageUrl}" target="_blank">View Image</a></div>`;
+    }
+
     return `
       <div class="log-entry">
         <div class="log-timestamp">${timestamp}</div>
         <div class="log-result ${resultClass}">${resultText}</div>
         ${actionText}
+        ${imageLink}
       </div>
     `;
   }).join('');
@@ -174,8 +207,14 @@ function displayLogs(logs) {
 // Listen for log updates from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Football Ad Muter Popup] Received message:', request);
-  if (request.action === 'logUpdate') {
-    console.log('[Football Ad Muter Popup] Log update received, refreshing display');
-    loadLogs();
+  try {
+    if (request.action === 'logUpdate') {
+      console.log('[Football Ad Muter Popup] Log update received, refreshing display');
+      loadLogs();
+      sendResponse({ status: 'received' });
+    }
+  } catch (error) {
+    console.error('[Football Ad Muter Popup] Error handling message:', error);
   }
+  return false; // Synchronous response
 });

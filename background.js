@@ -1,5 +1,25 @@
 // Background service worker
 
+// Keep service worker alive
+let keepAliveInterval;
+
+function keepServiceWorkerAlive() {
+  keepAliveInterval = setInterval(() => {
+    chrome.runtime.getPlatformInfo(() => {
+      if (chrome.runtime.lastError) {
+        console.log('[Football Ad Muter Background] Service worker keepalive check failed');
+      } else {
+        console.log('[Football Ad Muter Background] Service worker keepalive ping');
+      }
+    });
+  }, 25000); // 25 seconds
+}
+
+chrome.runtime.onStartup.addListener(() => {
+  console.log('[Football Ad Muter Background] Service worker started');
+  keepServiceWorkerAlive();
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.sync.set({
@@ -8,7 +28,8 @@ chrome.runtime.onInstalled.addListener(() => {
     isEnabled: false
   });
   
-  console.log('[Football Ad Muter] Extension installed');
+  console.log('[Football Ad Muter Background] Extension installed');
+  keepServiceWorkerAlive();
 });
 
 // Handle messages from content scripts
@@ -18,7 +39,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'ping') {
     console.log('[Football Ad Muter Background] Ping received, sending pong');
     sendResponse({ status: 'pong' });
-    return;
+    return false; // Synchronous response
   }
   
   if (request.action === 'analyzeImage') {
@@ -27,19 +48,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Football Ad Muter Background] Ollama URL:', request.ollamaUrl);
     
     // Handle async operation properly
-    (async () => {
-      try {
-        const result = await analyzeWithOllama(request.base64Image, request.ollamaUrl);
+    analyzeWithOllama(request.base64Image, request.ollamaUrl)
+      .then(result => {
         console.log('[Football Ad Muter Background] Analysis complete:', result);
         sendResponse({ result: result, error: null });
-      } catch (error) {
+      })
+      .catch(error => {
         console.error('[Football Ad Muter Background] Analysis failed:', error);
         sendResponse({ result: null, error: error.message });
-      }
-    })();
+      });
     
     return true; // Keep the message channel open for async response
   }
+  
+  if (request.action === 'logUpdate') {
+    // Handle log update messages from content script
+    console.log('[Football Ad Muter Background] Log update message received');
+    return false; // No response needed
+  }
+  
+  return false; // Default case
 });
 
 async function analyzeWithOllama(base64Image, ollamaUrl) {
