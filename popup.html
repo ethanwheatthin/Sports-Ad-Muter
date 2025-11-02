@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Football Ad Muter</title>
+  <style>
+    body {
+      width: 350px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-size: 14px;
+    }
+    
+    h1 {
+      font-size: 18px;
+      margin: 0 0 16px 0;
+      color: #1a1a1a;
+    }
+    
+    .section {
+      margin-bottom: 16px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    
+    button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    #startBtn {
+      background-color: #28a745;
+      color: white;
+    }
+    
+    #startBtn:hover {
+      background-color: #218838;
+    }
+    
+    #startBtn:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    
+    #stopBtn {
+      background-color: #dc3545;
+      color: white;
+    }
+    
+    #stopBtn:hover {
+      background-color: #c82333;
+    }
+    
+    #stopBtn:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    
+    .status {
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 12px;
+      text-align: center;
+      font-weight: 500;
+    }
+    
+    .status.active {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    
+    .status.inactive {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    
+    .info {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    .save-btn {
+      background-color: #007bff;
+      color: white;
+      width: 100%;
+      margin-top: 8px;
+    }
+    
+    .save-btn:hover {
+      background-color: #0056b3;
+    }
+    
+    .logs-section {
+      margin-top: 20px;
+      border-top: 1px solid #ddd;
+      padding-top: 16px;
+    }
+    
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .logs-title {
+      font-weight: 600;
+      color: #333;
+      margin: 0;
+    }
+    
+    .clear-logs {
+      background-color: #6c757d;
+      color: white;
+      padding: 4px 8px;
+      font-size: 12px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    
+    .clear-logs:hover {
+      background-color: #5a6268;
+    }
+    
+    .logs-container {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background-color: #fafafa;
+    }
+    
+    .log-entry {
+      padding: 8px;
+      border-bottom: 1px solid #e8e8e8;
+      font-size: 12px;
+    }
+    
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    
+    .log-timestamp {
+      color: #666;
+      font-weight: 500;
+    }
+    
+    .log-result {
+      margin-top: 2px;
+    }
+    
+    .log-gameplay {
+      color: #28a745;
+      font-weight: 500;
+    }
+    
+    .log-ad {
+      color: #dc3545;
+      font-weight: 500;
+    }
+    
+    .log-error {
+      color: #ffc107;
+      font-weight: 500;
+    }
+    
+    .log-action {
+      color: #007bff;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+    
+    .no-logs {
+      padding: 20px;
+      text-align: center;
+      color: #999;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <h1>⚽ Football Ad Muter</h1>
+  
+  <div class="section">
+    <label for="ollamaUrl">Ollama API URL:</label>
+    <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
+    <div class="info">Default: http://localhost:11434 (Ollama)</div>
+  </div>
+  
+  <div class="section">
+    <label for="checkInterval">Check Interval (ms):</label>
+    <input type="number" id="checkInterval" min="1000" max="10000" step="500" placeholder="3000">
+    <div class="info">How often to check (1000-10000ms)</div>
+  </div>
+  
+  <button class="save-btn" id="saveBtn">Save Settings</button>
+  
+  <div class="button-group">
+    <button id="startBtn">Start Monitoring</button>
+    <button id="stopBtn" disabled>Stop Monitoring</button>
+  </div>
+  
+  <div class="status inactive" id="status">Inactive</div>
+  
+  <div class="logs-section">
+    <div class="logs-header">
+      <h3 class="logs-title">Recent Analysis Logs</h3>
+      <button class="clear-logs" id="clearLogsBtn">Clear</button>
+    </div>
+    <div class="logs-container" id="logsContainer">
+      <div class="no-logs">No logs available. Start monitoring to see analysis results.</div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
