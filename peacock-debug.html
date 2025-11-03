@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peacock Video Debug</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            margin: 0;
+        }
+        
+        h1 {
+            color: #00ff00;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        
+        .section {
+            background: #0a0a0a;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #00cc00;
+        }
+        
+        .video-info {
+            margin: 10px 0;
+            padding: 10px;
+            background: #0f0f0f;
+            border-left: 3px solid #00ff00;
+        }
+        
+        .warning {
+            color: #ffaa00;
+        }
+        
+        .error {
+            color: #ff0000;
+        }
+        
+        .success {
+            color: #00ff00;
+        }
+        
+        pre {
+            background: #000;
+            padding: 10px;
+            overflow-x: auto;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>🦚 Peacock Video Debug Tool</h1>
+    
+    <div class="section">
+        <h2>Instructions</h2>
+        <p>1. Open Peacock in another tab</p>
+        <p>2. Start playing a video</p>
+        <p>3. Open browser DevTools (F12)</p>
+        <p>4. Paste the script below into the Console</p>
+        <p>5. Copy the output and analyze</p>
+    </div>
+    
+    <div class="section">
+        <h2>Debug Script</h2>
+        <button onclick="copyScript()">📋 Copy Script to Clipboard</button>
+        <pre id="debugScript">// Peacock Video Debug Script
+(function() {
+    console.log('=== PEACOCK VIDEO DEBUG ===');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('');
+    
+    // Find all video elements
+    const videos = document.querySelectorAll('video');
+    console.log('Total video elements found:', videos.length);
+    console.log('');
+    
+    // Analyze each video
+    videos.forEach((video, index) => {
+        console.log(`--- VIDEO ${index + 1} ---`);
+        console.log('Properties:');
+        console.log('  videoWidth:', video.videoWidth);
+        console.log('  videoHeight:', video.videoHeight);
+        console.log('  area:', video.videoWidth * video.videoHeight);
+        console.log('  currentTime:', video.currentTime);
+        console.log('  duration:', video.duration);
+        console.log('  paused:', video.paused);
+        console.log('  muted:', video.muted);
+        console.log('  readyState:', video.readyState, 
+            ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'][video.readyState]);
+        console.log('  networkState:', video.networkState,
+            ['NETWORK_EMPTY', 'NETWORK_IDLE', 'NETWORK_LOADING', 'NETWORK_NO_SOURCE'][video.networkState]);
+        console.log('  src:', video.src || video.currentSrc || 'no src');
+        console.log('  crossOrigin:', video.crossOrigin);
+        
+        // Check parent elements
+        console.log('Parent chain:');
+        let parent = video.parentElement;
+        let depth = 0;
+        while (parent && depth < 5) {
+            const classes = parent.className || 'no classes';
+            const id = parent.id || 'no id';
+            const tag = parent.tagName.toLowerCase();
+            console.log(`  ${depth + 1}. <${tag}> id="${id}" class="${classes}"`);
+            parent = parent.parentElement;
+            depth++;
+        }
+        
+        // Check visibility
+        const rect = video.getBoundingClientRect();
+        const style = window.getComputedStyle(video);
+        console.log('Visibility:');
+        console.log('  display:', style.display);
+        console.log('  visibility:', style.visibility);
+        console.log('  opacity:', style.opacity);
+        console.log('  position:', style.position);
+        console.log('  zIndex:', style.zIndex);
+        console.log('  top:', rect.top, 'left:', rect.left);
+        console.log('  width:', rect.width, 'height:', rect.height);
+        console.log('  inViewport:', rect.top >= 0 && rect.left >= 0 && 
+            rect.bottom <= window.innerHeight && rect.right <= window.innerWidth);
+        
+        // Check if video is actually playing
+        console.log('Playback state:');
+        console.log('  playing:', !video.paused && !video.ended && video.readyState > 2);
+        console.log('  ended:', video.ended);
+        console.log('  seeking:', video.seeking);
+        console.log('  buffered:', video.buffered.length > 0 ? 
+            `${video.buffered.start(0)} - ${video.buffered.end(video.buffered.length - 1)}` : 'none');
+        
+        // Try to capture frame
+        console.log('Capture test:');
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.min(video.videoWidth, 100);
+            canvas.height = Math.min(video.videoHeight, 100);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Check pixel variance
+            let variance = 0;
+            for (let i = 0; i < imageData.data.length; i += 16) {
+                const r = imageData.data[i];
+                const g = imageData.data[i + 1];
+                const b = imageData.data[i + 2];
+                if ((r > 5 || g > 5 || b > 5) && (r < 250 || g < 250 || b < 250)) {
+                    variance++;
+                }
+            }
+            
+            console.log('  ✅ Capture successful');
+            console.log('  Pixel variance:', variance);
+            console.log('  Sample size:', Math.floor(imageData.data.length / 16));
+            console.log('  Has content:', variance > 5);
+        } catch (e) {
+            console.log('  ❌ Capture failed:', e.message);
+        }
+        
+        console.log('');
+    });
+    
+    // Check for Peacock-specific selectors
+    console.log('--- PEACOCK SPECIFICS ---');
+    const peacockSelectors = [
+        '.video-player',
+        '.player-container',
+        '[class*="video"]',
+        '[class*="player"]',
+        '[data-testid*="video"]',
+        '[data-testid*="player"]',
+        'video[class]',
+        'video[id]'
+    ];
+    
+    peacockSelectors.forEach(selector => {
+        try {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length > 0) {
+                console.log(`Found ${elements.length} element(s) matching: ${selector}`);
+                elements.forEach((el, i) => {
+                    if (el.tagName === 'VIDEO') {
+                        console.log(`  ${i + 1}. VIDEO element`);
+                    } else {
+                        const videoInside = el.querySelector('video');
+                        console.log(`  ${i + 1}. ${el.tagName} ${videoInside ? 'WITH video inside' : 'NO video'}`);
+                    }
+                });
+            }
+        } catch (e) {
+            // Invalid selector
+        }
+    });
+    
+    console.log('');
+    console.log('=== END DEBUG ===');
+})();</pre>
+    </div>
+    
+    <div class="section">
+        <h2>Common Issues with Peacock</h2>
+        <ul>
+            <li><strong>Multiple video elements:</strong> Peacock may use multiple video tags (one for ads, one for content)</li>
+            <li><strong>Dynamic loading:</strong> Video elements may be created/destroyed dynamically</li>
+            <li><strong>Hidden videos:</strong> Inactive videos may have 0x0 dimensions or be off-screen</li>
+            <li><strong>CORS restrictions:</strong> Some streaming services block cross-origin canvas access</li>
+            <li><strong>DRM/EME:</strong> Protected content may have additional restrictions</li>
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h2>What to Look For in Output</h2>
+        <ol>
+            <li><strong>Number of videos:</strong> Are there multiple video elements?</li>
+            <li><strong>Dimensions:</strong> Which video has the largest dimensions (width × height)?</li>
+            <li><strong>Playing state:</strong> Which video is actually playing (not paused)?</li>
+            <li><strong>ReadyState:</strong> Should be 3 or 4 for active playback</li>
+            <li><strong>Capture test:</strong> Does the capture succeed or fail?</li>
+            <li><strong>Pixel variance:</strong> Should be > 5 for real content</li>
+            <li><strong>Parent classes:</strong> Look for identifying classes like "active", "playing", "main"</li>
+        </ol>
+    </div>
+    
+    <script>
+        function copyScript() {
+            const script = document.getElementById('debugScript').textContent;
+            navigator.clipboard.writeText(script).then(() => {
+                alert('✅ Script copied to clipboard!\n\nNow:\n1. Go to Peacock\n2. Open DevTools (F12)\n3. Paste into Console\n4. Press Enter');
+            }).catch(err => {
+                alert('❌ Failed to copy: ' + err);
+            });
+        }
+    </script>
+</body>
+</html>

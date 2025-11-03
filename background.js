@@ -49,9 +49,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     // Handle async operation properly
     analyzeWithOllama(request.base64Image, request.ollamaUrl)
-      .then(result => {
-        console.log('[Football Ad Muter Background] Analysis complete:', result);
-        sendResponse({ result: result, error: null });
+      .then(analysisResult => {
+        console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
+        // Return the full analysis result object (includes result, model, response, processingTime, etc.)
+        sendResponse(analysisResult);
       })
       .catch(error => {
         console.error('[Football Ad Muter Background] Analysis failed:', error);
@@ -147,6 +148,8 @@ async function testOllamaConnection(ollamaUrl) {
 }
 
 async function analyzeWithOllama(base64Image, ollamaUrl) {
+  const startTime = Date.now();
+  
   try {
     console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
     const prompt = `You are a specialized image classifier for detecting live sports gameplay.
@@ -211,6 +214,8 @@ OUTPUT FORMAT: Only output "true" or "false" - nothing else.`;
     
     clearTimeout(timeoutId);
     
+    const processingTime = Date.now() - startTime;
+    
     console.log('[Football Ad Muter Background] API response status:', response.status, response.statusText);
     console.log('[Football Ad Muter Background] CORS headers:', {
       'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
@@ -230,26 +235,42 @@ OUTPUT FORMAT: Only output "true" or "false" - nothing else.`;
     const result = data.response.trim().toLowerCase();
     console.log('[Football Ad Muter Background] Parsed result:', `"${result}"`);
     
-    // Parse the response
+    // Parse the response and return full details for logging
+    let isGameplay = null;
+    
     if (result === 'true') {
       console.log('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
-      return true;
-    }
-    if (result === 'false') {
+      isGameplay = true;
+    } else if (result === 'false') {
       console.log('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
-      return false;
+      isGameplay = false;
+    } else {
+      console.warn('[Football Ad Muter Background] ❓ Unexpected analysis response:', result);
     }
     
-    console.warn('[Football Ad Muter Background] ❓ Unexpected analysis response:', result);
-    return null;
+    // Return full response object for logging
+    return {
+      result: isGameplay,
+      model: data.model || 'qwen3-vl:2b',
+      response: data,
+      processingTime: processingTime
+    };
     
   } catch (error) {
+    const processingTime = Date.now() - startTime;
+    
     console.error('[Football Ad Muter Background] 💥 Error calling Ollama API:', error);
     console.error('[Football Ad Muter Background] Error details:', {
       message: error.message,
       stack: error.stack,
       apiUrl: `${ollamaUrl}/api/generate`
     });
-    throw error;
+    
+    // Return error details for logging
+    return {
+      result: null,
+      error: error.message,
+      processingTime: processingTime
+    };
   }
 }

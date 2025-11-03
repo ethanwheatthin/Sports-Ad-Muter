@@ -275,13 +275,13 @@ function displayLogs(logs) {
   const recentLogs = logs.slice(-20).reverse();
   console.log('[Football Ad Muter Popup] Showing', recentLogs.length, 'recent logs');
 
-  container.innerHTML = recentLogs.map(log => {
+  container.innerHTML = recentLogs.map((log, index) => {
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
     const resultClass = log.result === true ? 'log-gameplay' : 
                        log.result === false ? 'log-ad' : 'log-error';
     const resultText = log.result === true ? '✓ Gameplay detected' :
                       log.result === false ? '⚠ Advertisement detected' :
-                      'Nothing to report Yet';
+                      'System message';
 
     let actionText = '';
     if (log.action) {
@@ -290,7 +290,26 @@ function displayLogs(logs) {
 
     let imageLink = '';
     if (log.imageUrl) {
-      imageLink = `<div class="log-image"><a href="${log.imageUrl}" target="_blank">View Image</a></div>`;
+      imageLink = `<div class="log-image"><a href="${log.imageUrl}" target="_blank" style="color: #007bff; text-decoration: none; font-size: 11px;">📷 View Screenshot</a></div>`;
+    }
+
+    let llmResponseSection = '';
+    if (log.llmResponse) {
+      const responseId = `llm-response-${index}`;
+      const hasError = log.llmResponse.error;
+      const statusText = hasError ? '❌ Error' : '✅ Success';
+      const statusClass = hasError ? 'log-error' : 'log-gameplay';
+      
+      llmResponseSection = `
+        <div class="llm-response-section">
+          <div class="llm-toggle" onclick="toggleLLMResponse('${responseId}')" style="cursor: pointer; color: #007bff; font-size: 11px; margin-top: 4px;">
+            🤖 LLM Response ${statusText} (click to expand)
+          </div>
+          <div id="${responseId}" class="llm-details" style="display: none; background: #f8f9fa; padding: 8px; margin-top: 4px; border-radius: 3px; font-size: 11px; border-left: 3px solid #007bff;">
+            ${formatLLMResponse(log.llmResponse)}
+          </div>
+        </div>
+      `;
     }
 
     return `
@@ -299,9 +318,59 @@ function displayLogs(logs) {
         <div class="log-result ${resultClass}">${resultText}</div>
         ${actionText}
         ${imageLink}
+        ${llmResponseSection}
       </div>
     `;
   }).join('');
+}
+
+function formatLLMResponse(llmResponse) {
+  if (llmResponse.error) {
+    return `
+      <div style="color: #dc3545;">
+        <strong>Error:</strong> ${llmResponse.error}
+      </div>
+    `;
+  }
+
+  let html = '';
+  
+  if (llmResponse.model) {
+    html += `<div><strong>Model:</strong> ${llmResponse.model}</div>`;
+  }
+  
+  if (llmResponse.result !== undefined) {
+    const resultText = llmResponse.result === true ? 'Gameplay' : 
+                      llmResponse.result === false ? 'Advertisement' : 'Unknown';
+    const resultColor = llmResponse.result === true ? '#28a745' : 
+                       llmResponse.result === false ? '#dc3545' : '#ffc107';
+    html += `<div><strong>Analysis:</strong> <span style="color: ${resultColor}">${resultText}</span></div>`;
+  }
+  
+  if (llmResponse.response) {
+    html += `<div style="margin-top: 4px;"><strong>Raw Response:</strong></div>`;
+    html += `<div style="background: #fff; padding: 4px; border-radius: 2px; font-family: monospace; white-space: pre-wrap; max-height: 100px; overflow-y: auto;">${escapeHtml(JSON.stringify(llmResponse.response, null, 2))}</div>`;
+  }
+  
+  if (llmResponse.processingTime) {
+    html += `<div style="margin-top: 4px; color: #666;"><strong>Processing Time:</strong> ${llmResponse.processingTime}ms</div>`;
+  }
+  
+  return html || '<div>No additional details available</div>';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Global function to toggle LLM response visibility
+window.toggleLLMResponse = function(responseId) {
+  const element = document.getElementById(responseId);
+  if (element) {
+    element.style.display = element.style.display === 'none' ? 'block' : 'none';
+  }
 }
 
 // Listen for log updates from content script

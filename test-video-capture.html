@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Capture Test - Football Ad Muter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        h1 {
+            color: #333;
+        }
+        
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        video {
+            width: 100%;
+            max-width: 640px;
+            border: 2px solid #333;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        #capturedFrame {
+            max-width: 100%;
+            border: 2px solid #4CAF50;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        
+        .log {
+            background-color: #000;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .log-entry {
+            margin: 5px 0;
+            padding: 3px 0;
+            border-bottom: 1px solid #333;
+        }
+        
+        .info {
+            background-color: #e7f3ff;
+            padding: 10px;
+            border-left: 4px solid #2196F3;
+            margin: 10px 0;
+        }
+        
+        .warning {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-left: 4px solid #ffc107;
+            margin: 10px 0;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            padding: 10px;
+            border-left: 4px solid #dc3545;
+            margin: 10px 0;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            padding: 10px;
+            border-left: 4px solid #28a745;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏈 Video Capture Test - Football Ad Muter</h1>
+    
+    <div class="info">
+        <strong>Test Purpose:</strong> This page tests the video capture functionality of the extension.
+        Load this page with the extension enabled to test video frame capture and analysis.
+    </div>
+    
+    <div class="test-section">
+        <h2>Test Video</h2>
+        <video id="testVideo" controls crossorigin="anonymous">
+            <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        
+        <div style="margin-top: 15px;">
+            <button onclick="playVideo()">▶ Play Video</button>
+            <button onclick="pauseVideo()">⏸ Pause Video</button>
+            <button onclick="testCapture()">📸 Test Capture</button>
+            <button onclick="clearLog()">🗑 Clear Log</button>
+        </div>
+        
+        <div class="info" style="margin-top: 15px;">
+            <strong>Video State:</strong>
+            <div id="videoState">Not initialized</div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Captured Frame</h2>
+        <div id="captureResult">
+            <p>No frame captured yet. Click "Test Capture" to capture a frame.</p>
+        </div>
+        <canvas id="testCanvas" style="display: none;"></canvas>
+    </div>
+    
+    <div class="test-section">
+        <h2>Console Log</h2>
+        <div class="log" id="consoleLog">
+            <div class="log-entry">Waiting for test actions...</div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('testVideo');
+        const canvas = document.getElementById('testCanvas');
+        const consoleLog = document.getElementById('consoleLog');
+        const videoState = document.getElementById('videoState');
+        const captureResult = document.getElementById('captureResult');
+        
+        // Log function
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.style.color = type === 'error' ? '#ff6b6b' : 
+                               type === 'success' ? '#51cf66' : 
+                               type === 'warning' ? '#ffd43b' : '#0f0';
+            entry.textContent = `[${timestamp}] ${message}`;
+            consoleLog.appendChild(entry);
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+            console.log(`[Video Capture Test] ${message}`);
+        }
+        
+        // Update video state display
+        function updateVideoState() {
+            if (!video) return;
+            
+            const state = {
+                width: video.videoWidth,
+                height: video.videoHeight,
+                currentTime: video.currentTime.toFixed(2),
+                duration: video.duration.toFixed(2),
+                paused: video.paused,
+                muted: video.muted,
+                readyState: video.readyState,
+                networkState: video.networkState
+            };
+            
+            videoState.innerHTML = `
+                <strong>Dimensions:</strong> ${state.width}x${state.height}<br>
+                <strong>Time:</strong> ${state.currentTime}s / ${state.duration}s<br>
+                <strong>State:</strong> ${state.paused ? 'Paused' : 'Playing'}, ${state.muted ? 'Muted' : 'Unmuted'}<br>
+                <strong>Ready:</strong> ${state.readyState} (0=empty, 1=metadata, 2=current, 3=future, 4=enough)<br>
+                <strong>Network:</strong> ${state.networkState}
+            `;
+        }
+        
+        // Play video
+        function playVideo() {
+            video.play();
+            log('Video playback started', 'success');
+        }
+        
+        // Pause video
+        function pauseVideo() {
+            video.pause();
+            log('Video playback paused', 'warning');
+        }
+        
+        // Clear log
+        function clearLog() {
+            consoleLog.innerHTML = '<div class="log-entry">Log cleared</div>';
+        }
+        
+        // Test capture function (mimics the extension's logic)
+        function testCapture() {
+            try {
+                log('Starting video capture test...', 'info');
+                
+                // Check if video is ready
+                if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+                    log('ERROR: Video not ready - no dimensions available', 'error');
+                    return;
+                }
+                
+                if (video.readyState < 1) {
+                    log('ERROR: Video not ready - insufficient data loaded', 'error');
+                    return;
+                }
+                
+                log(`Video ready: ${video.videoWidth}x${video.videoHeight}, readyState=${video.readyState}`, 'success');
+                
+                // Create canvas
+                const maxWidth = 800;
+                const aspectRatio = video.videoHeight / video.videoWidth;
+                
+                if (video.videoWidth > maxWidth) {
+                    canvas.width = maxWidth;
+                    canvas.height = maxWidth * aspectRatio;
+                } else {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                }
+                
+                log(`Canvas created: ${canvas.width}x${canvas.height}`, 'info');
+                
+                const ctx = canvas.getContext('2d');
+                
+                // Fill white background
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw video frame
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                log('Video frame drawn to canvas', 'success');
+                
+                // Check pixel variance
+                const imageData = ctx.getImageData(0, 0, Math.min(canvas.width, 100), Math.min(canvas.height, 100));
+                const pixels = imageData.data;
+                let hasVideoContent = false;
+                let pixelVariance = 0;
+                
+                for (let i = 0; i < pixels.length; i += 16) {
+                    const r = pixels[i];
+                    const g = pixels[i + 1];
+                    const b = pixels[i + 2];
+                    
+                    if ((r !== 255 || g !== 255 || b !== 255) && (r > 5 || g > 5 || b > 5)) {
+                        hasVideoContent = true;
+                        pixelVariance++;
+                    }
+                }
+                
+                log(`Pixel analysis: variance=${pixelVariance}, hasContent=${hasVideoContent}`, 'info');
+                
+                if (!hasVideoContent || pixelVariance < 5) {
+                    log('WARNING: Low pixel variance detected', 'warning');
+                }
+                
+                // Convert to base64
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        log('ERROR: Failed to create blob from canvas', 'error');
+                        return;
+                    }
+                    
+                    log(`Blob created: ${blob.size} bytes`, 'success');
+                    
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64Image = reader.result;
+                        const base64Length = base64Image.split(',')[1].length;
+                        log(`Base64 image created: ${base64Length} characters`, 'success');
+                        
+                        // Display captured frame
+                        const img = document.createElement('img');
+                        img.src = base64Image;
+                        img.id = 'capturedFrame';
+                        img.alt = 'Captured Frame';
+                        
+                        captureResult.innerHTML = '<p><strong>Captured Frame:</strong></p>';
+                        captureResult.appendChild(img);
+                        
+                        log('✅ Capture test complete! Frame displayed above.', 'success');
+                    };
+                    
+                    reader.onerror = (error) => {
+                        log('ERROR: FileReader failed - ' + error, 'error');
+                    };
+                    
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', 0.8);
+                
+            } catch (error) {
+                log('ERROR: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+        
+        // Event listeners
+        video.addEventListener('loadedmetadata', () => {
+            log('Video metadata loaded', 'success');
+            updateVideoState();
+        });
+        
+        video.addEventListener('loadeddata', () => {
+            log('Video data loaded', 'success');
+            updateVideoState();
+        });
+        
+        video.addEventListener('play', () => {
+            log('Video playing', 'info');
+            updateVideoState();
+        });
+        
+        video.addEventListener('pause', () => {
+            log('Video paused', 'warning');
+            updateVideoState();
+        });
+        
+        video.addEventListener('timeupdate', updateVideoState);
+        
+        video.addEventListener('error', (e) => {
+            log('Video error: ' + e.message, 'error');
+            updateVideoState();
+        });
+        
+        // Initial state update
+        setTimeout(updateVideoState, 500);
+        
+        log('Test page initialized. Load a video and test the capture.', 'success');
+    </script>
+</body>
+</html>
