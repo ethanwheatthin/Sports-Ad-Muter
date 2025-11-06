@@ -24,7 +24,7 @@ chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.sync.set({
     ollamaUrl: 'http://localhost:11434',
-    checkInterval: 3000, // 3 seconds default (can be set up to 60 seconds)
+    checkInterval: 10000, // 3 seconds default (can be set up to 60 seconds)
     isEnabled: false
   });
   

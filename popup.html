@@ -5,10 +5,12 @@
   <title>Football Ad Muter</title>
   <style>
     body {
-      width: 350px;
+      width: 400px;
       padding: 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       font-size: 14px;
+      max-height: 600px;
+      overflow-y: auto;
     }
     
     h1 {
@@ -292,6 +294,71 @@
     .log-image a:hover {
       text-decoration: underline;
     }
+    
+    .log-thumbnail {
+      margin-top: 6px;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    
+    .log-thumbnail img {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: transform 0.2s;
+    }
+    
+    .log-thumbnail:hover img {
+      transform: scale(1.02);
+    }
+    
+    .log-thumbnail-caption {
+      font-size: 10px;
+      color: #666;
+      text-align: center;
+      margin-top: 2px;
+      font-style: italic;
+    }
+    
+    .activity-entry {
+      padding: 6px 8px;
+      border-bottom: 1px solid #e8e8e8;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    
+    .activity-entry:last-child {
+      border-bottom: none;
+    }
+    
+    .activity-time {
+      color: #999;
+      font-size: 10px;
+      margin-right: 6px;
+    }
+    
+    .activity-message {
+      color: #333;
+    }
+    
+    .activity-info {
+      color: #17a2b8;
+    }
+    
+    .activity-success {
+      color: #28a745;
+    }
+    
+    .activity-warning {
+      color: #ffc107;
+    }
+    
+    .activity-error {
+      color: #dc3545;
+    }
   </style>
 </head>
 <body>
@@ -305,8 +372,8 @@
   
   <div class="section">
     <label for="checkInterval">Check Interval (seconds):</label>
-    <input type="number" id="checkInterval" min="1" max="60" step="0.5" placeholder="3">
-    <div class="info">How often to check (1-60 seconds)</div>
+    <input type="number" id="checkInterval" min="10" max="180" step="0.5" placeholder="10">
+    <div class="info">How often to check (10-180 seconds)</div>
   </div>
   
   <button class="save-btn" id="saveBtn">Save Settings</button>
@@ -328,7 +395,17 @@
   
   <div class="logs-section">
     <div class="logs-header">
-      <h3 class="logs-title">Recent Analysis Logs</h3>
+      <h3 class="logs-title">Activity Log</h3>
+      <button class="clear-logs" id="clearActivityBtn">Clear</button>
+    </div>
+    <div class="logs-container" id="activityContainer" style="max-height: 150px;">
+      <div class="no-logs">No activity yet. Start monitoring to see live updates.</div>
+    </div>
+  </div>
+  
+  <div class="logs-section">
+    <div class="logs-header">
+      <h3 class="logs-title">Analysis Results</h3>
       <button class="clear-logs" id="clearLogsBtn">Clear</button>
     </div>
     <div class="logs-container" id="logsContainer">
