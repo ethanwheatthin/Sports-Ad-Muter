@@ -328,10 +328,44 @@
       border-bottom: 1px solid #e8e8e8;
       font-size: 11px;
       line-height: 1.4;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .activity-entry:hover {
+      background-color: #f5f5f5;
     }
     
     .activity-entry:last-child {
       border-bottom: none;
+    }
+    
+    .activity-entry .log-thumbnail {
+      margin-top: 6px;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    
+    .activity-entry .log-thumbnail img {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: transform 0.2s;
+    }
+    
+    .activity-entry .log-thumbnail:hover img {
+      transform: scale(1.02);
+    }
+    
+    .activity-entry .log-thumbnail-caption {
+      font-size: 10px;
+      color: #666;
+      text-align: center;
+      margin-top: 2px;
+      font-style: italic;
     }
     
     .activity-time {
@@ -342,6 +376,14 @@
     
     .activity-message {
       color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .activity-message.expanded {
+      white-space: normal;
+      word-wrap: break-word;
     }
     
     .activity-info {

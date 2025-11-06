@@ -91,6 +91,48 @@ function logActivity(message, type = 'info') {
   });
 }
 
+// Activity logging function with image attachment
+function logActivityWithImage(message, type = 'info', imageDataUrl = null) {
+  const activityEntry = {
+    timestamp: Date.now(),
+    message: message,
+    type: type,
+    imageUrl: imageDataUrl
+  };
+  
+  chrome.storage.sync.get(['activityLogs'], (storage) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
+      return;
+    }
+    
+    const logs = storage.activityLogs || [];
+    logs.push(activityEntry);
+    
+    // Keep only the last 100 entries
+    const trimmedLogs = logs.slice(-100);
+    
+    chrome.storage.sync.set({ activityLogs: trimmedLogs }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
+        return;
+      }
+      
+      // Notify popup to refresh activity logs if it's open
+      try {
+        chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {
+          // Ignore errors - popup might not be open
+          if (chrome.runtime.lastError) {
+            // This is normal when popup is closed, don't log
+          }
+        });
+      } catch (error) {
+        // Ignore - popup not available
+      }
+    });
+  });
+}
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Football Ad Muter] Received message from popup:', request);
@@ -701,6 +743,11 @@ async function performCapture(video) {
         const base64Image = reader.result.split(',')[1];
         console.log('[Football Ad Muter] Image converted to base64, length:', base64Image.length, 'characters');
         console.log('[Football Ad Muter] Sending image to background script for analysis...');
+        
+        // Log the frame capture with the image data
+        logActivityWithImage(`📸 Frame captured (${captureResult.method})`, 'info', reader.result);
+        
+        // Log that we're sending the frame for analysis
         logActivity('🤖 Analyzing frame with LLM...', 'info');
         
         const response = await new Promise((resolve, reject) => {
@@ -761,7 +808,7 @@ async function performCapture(video) {
           // Mute the video
           if (!video.muted) {
             console.log('[Football Ad Muter] 🔇 MUTING VIDEO - Advertisement detected');
-            logActivity(`🔇 MUTING - Advertisement detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'warning');
+            logActivity(`🔇 MUTING - Advertisement detected${llmResponseText ? ' | LLM: ' + llmResponseText?.response : ''}`, 'warning');
             video.muted = true;
             video.dataset.mutedByExtension = 'true';
             action = `Video muted (advertisement detected) - Method: ${captureResult.method}`;
@@ -772,13 +819,13 @@ async function performCapture(video) {
           // Unmute if we muted it
           if (video.dataset.mutedByExtension === 'true') {
             console.log('[Football Ad Muter] 🔊 UNMUTING VIDEO - Gameplay detected');
-            logActivity(`🔊 UNMUTING - Gameplay detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'success');
+            logActivity(`🔊 UNMUTING - Gameplay detected${llmResponseText ? ' | LLM: ' + llmResponseText?.response : ''}`, 'success');
             video.muted = false;
             delete video.dataset.mutedByExtension;
             action = `Video unmuted (gameplay detected) - Method: ${captureResult.method}`;
           } else {
             console.log('[Football Ad Muter] Gameplay detected, video not muted by extension');
-            logActivity(`✓ Gameplay confirmed${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'info');
+            logActivity(`✓ Gameplay confirmed${llmResponseText ? ' | LLM: ' + llmResponseText?.response : ''}`, 'info');
           }
         } else {
           console.log('[Football Ad Muter] Analysis returned null/undefined - no action taken');

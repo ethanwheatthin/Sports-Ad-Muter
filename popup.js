@@ -314,14 +314,29 @@ function displayActivityLogs(logs) {
   // Show most recent logs first (reverse chronological order)
   const recentLogs = logs.slice(-50).reverse();
   
-  container.innerHTML = recentLogs.map(log => {
+  container.innerHTML = recentLogs.map((log, index) => {
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
     const typeClass = `activity-${log.type || 'info'}`;
     
+    let imageSection = '';
+    if (log.imageUrl) {
+      // Escape quotes in the data URL for safe inline onclick
+      const escapedUrl = log.imageUrl.replace(/'/g, "\\'");
+      
+      // Create a thumbnail that can be clicked to open in new tab
+      imageSection = `
+        <div class="log-thumbnail" onclick="event.stopPropagation(); openImageInNewTab('${escapedUrl}')" title="Click to view full size" style="cursor: pointer; margin-top: 6px;">
+          <img src="${escapeHtml(log.imageUrl)}" alt="Video capture" style="max-width: 100%; height: auto; border-radius: 3px;" />
+        </div>
+        <div class="log-thumbnail-caption">📷 Click image to view full size</div>
+      `;
+    }
+    
     return `
-      <div class="activity-entry">
+      <div class="activity-entry" onclick="toggleActivityMessage(${index})" title="Click to expand/collapse">
         <span class="activity-time">${timestamp}</span>
-        <span class="activity-message ${typeClass}">${escapeHtml(log.message)}</span>
+        <span class="activity-message ${typeClass}" id="activity-msg-${index}">${escapeHtml(log.message)}</span>
+        ${imageSection}
       </div>
     `;
   }).join('');
@@ -496,6 +511,14 @@ window.openImageInNewTab = function(imageUrl) {
   } catch (error) {
     console.error('[Football Ad Muter Popup] Error opening image:', error);
     alert('Error opening image: ' + error.message);
+  }
+}
+
+// Global function to toggle activity message expansion
+window.toggleActivityMessage = function(index) {
+  const messageElement = document.getElementById(`activity-msg-${index}`);
+  if (messageElement) {
+    messageElement.classList.toggle('expanded');
   }
 }
 
