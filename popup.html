@@ -147,6 +147,44 @@
       background-color: #6c757d;
       cursor: not-allowed;
     }
+
+    /* Tiny status buttons for video state */
+    .tiny-status-group {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      align-items: center;
+    }
+
+    .tiny-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 12px;
+      border: 1px solid #d0d7de;
+      background: #f4f6f8;
+      color: #333;
+      cursor: default;
+      min-width: 68px;
+      text-align: center;
+    }
+
+    .tiny-btn.active {
+      background: #d4edda;
+      color: #155724;
+      border-color: #c3e6cb;
+    }
+
+    .tiny-btn.inactive {
+      background: #f8d7da;
+      color: #721c24;
+      border-color: #f5c6cb;
+    }
+
+    .tiny-btn.neutral {
+      background: #e9ecef;
+      color: #495057;
+      border-color: #dee2e6;
+    }
     
     .connection-status {
       padding: 8px;
@@ -426,6 +464,17 @@
       <button id="resetVideoBtn" class="reset-btn">Reset Video Player</button>
     </div>
     <div id="connectionStatus" class="connection-status" style="display: none;"></div>
+  </div>
+
+  <!-- Video status: tiny buttons showing audio & play/pause state -->
+  <div class="section" id="videoStatusSection">
+    <label>Video Status:</label>
+    <div class="tiny-status-group">
+      <button id="audioStatusBtn" class="tiny-btn neutral" title="Audio state">Audio: —</button>
+      <button id="playPauseBtn" class="tiny-btn neutral" title="Play/Pause state">State: —</button>
+      <button id="refreshStatusBtn" class="tiny-btn" title="Refresh status">⟳</button>
+    </div>
+    <div class="info" style="margin-top:6px;">Shows the audio (muted/unmuted) and play/pause state of the page's active video.</div>
   </div>
   
   <div class="button-group">

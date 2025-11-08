@@ -18,6 +18,9 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLog
   
   // Start auto-refresh of logs while popup is open
   startLogRefresh();
+
+  // Update video status UI once on load
+  updateVideoStatus();
   
   // Test background script connection
   chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
@@ -43,6 +46,8 @@ function startLogRefresh() {
   refreshInterval = setInterval(() => {
     loadLogs();
     loadActivityLogs();
+    // also update the small video status indicators
+    updateVideoStatus();
   }, 2000);
 }
 
@@ -286,6 +291,82 @@ function updateUI() {
     status.className = 'status inactive';
   }
 }
+
+// Update the tiny status buttons for audio and play/pause state
+function setTinyButton(btn, type, label) {
+  if (!btn) return;
+  btn.textContent = label;
+  btn.classList.remove('active', 'inactive', 'neutral');
+  if (type === 'active') btn.classList.add('active');
+  else if (type === 'inactive') btn.classList.add('inactive');
+  else btn.classList.add('neutral');
+}
+
+function updateVideoStatus() {
+  const audioBtn = document.getElementById('audioStatusBtn');
+  const playBtn = document.getElementById('playPauseBtn');
+  const refreshBtn = document.getElementById('refreshStatusBtn');
+
+  // Default to neutral state while we query
+  setTinyButton(audioBtn, 'neutral', 'Audio: —');
+  setTinyButton(playBtn, 'neutral', 'State: —');
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) {
+      setTinyButton(audioBtn, 'neutral', 'Audio: —');
+      setTinyButton(playBtn, 'neutral', 'State: —');
+      return;
+    }
+
+    try {
+      chrome.tabs.sendMessage(tabs[0].id, { action: 'getVideoStatus' }, (response) => {
+        if (chrome.runtime.lastError) {
+          // Content script not available / no video
+          setTinyButton(audioBtn, 'neutral', 'Audio: —');
+          setTinyButton(playBtn, 'neutral', 'State: —');
+          return;
+        }
+
+        if (!response || !response.found) {
+          setTinyButton(audioBtn, 'neutral', 'Audio: —');
+          setTinyButton(playBtn, 'neutral', 'State: —');
+          return;
+        }
+
+        // audio
+        if (response.muted) {
+          setTinyButton(audioBtn, 'inactive', 'Muted');
+        } else {
+          setTinyButton(audioBtn, 'active', 'Unmuted');
+        }
+
+        // play/pause
+        if (response.paused) {
+          setTinyButton(playBtn, 'inactive', 'Paused');
+        } else {
+          setTinyButton(playBtn, 'active', 'Playing');
+        }
+      });
+    } catch (err) {
+      console.error('[Football Ad Muter Popup] Error requesting video status:', err);
+      setTinyButton(audioBtn, 'neutral', 'Audio: —');
+      setTinyButton(playBtn, 'neutral', 'State: —');
+    }
+  });
+}
+
+// Wire refresh button on popup
+document.addEventListener('DOMContentLoaded', () => {
+  const refreshBtn = document.getElementById('refreshStatusBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      updateVideoStatus();
+      // provide a small visual feedback by briefly toggling neutral style
+      refreshBtn.classList.add('active');
+      setTimeout(() => refreshBtn.classList.remove('active'), 250);
+    });
+  }
+});
 
 function loadLogs() {
   chrome.storage.sync.get(['analysisLogs'], (result) => {

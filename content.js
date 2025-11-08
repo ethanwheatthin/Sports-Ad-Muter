@@ -166,6 +166,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Football Ad Muter] Reset video command received');
     resetVideoPlayer();
     sendResponse({ status: 'reset' });
+  } else if (request.action === 'getVideoStatus') {
+    // Return basic status about the active video on the page
+    try {
+      const video = getActiveVideo();
+      if (!video) {
+        sendResponse({ found: false });
+      } else {
+        sendResponse({
+          found: true,
+          muted: !!video.muted,
+          paused: !!video.paused,
+          currentTime: video.currentTime
+        });
+      }
+    } catch (err) {
+      console.error('[Football Ad Muter] Error getting video status:', err);
+      sendResponse({ found: false, error: err?.message || String(err) });
+    }
   }
   return false;
 });
