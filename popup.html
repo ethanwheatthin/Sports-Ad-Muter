@@ -255,6 +255,11 @@
       padding: 8px;
       border-bottom: 1px solid #e8e8e8;
       font-size: 12px;
+      transition: background-color 0.2s;
+    }
+    
+    .log-entry:hover {
+      background-color: #f0f0f0;
     }
     
     .log-entry:last-child {
@@ -500,7 +505,7 @@
       <button class="clear-logs" id="clearLogsBtn">Clear</button>
     </div>
     <div class="logs-container" id="logsContainer">
-      <div class="no-logs">No logs available. Start monitoring to see analysis results.</div>
+      <div class="no-logs">No analysis results yet. Start monitoring to see results.</div>
     </div>
   </div>
   

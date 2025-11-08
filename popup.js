@@ -401,12 +401,9 @@ function displayActivityLogs(logs) {
     
     let imageSection = '';
     if (log.imageUrl) {
-      // Escape quotes in the data URL for safe inline onclick
-      const escapedUrl = log.imageUrl.replace(/'/g, "\\'");
-      
-      // Create a thumbnail that can be clicked to open in new tab
+      // Store image URL as data attribute
       imageSection = `
-        <div class="log-thumbnail" onclick="event.stopPropagation(); openImageInNewTab('${escapedUrl}')" title="Click to view full size" style="cursor: pointer; margin-top: 6px;">
+        <div class="log-thumbnail" data-activity-image-url="${escapeHtml(log.imageUrl)}" title="Click to view full size" style="cursor: pointer; margin-top: 6px;">
           <img src="${escapeHtml(log.imageUrl)}" alt="Video capture" style="max-width: 100%; height: auto; border-radius: 3px;" />
         </div>
         <div class="log-thumbnail-caption">📷 Click image to view full size</div>
@@ -414,7 +411,7 @@ function displayActivityLogs(logs) {
     }
     
     return `
-      <div class="activity-entry" onclick="toggleActivityMessage(${index})" title="Click to expand/collapse">
+      <div class="activity-entry" data-activity-index="${index}" title="Click to expand/collapse">
         <span class="activity-time">${timestamp}</span>
         <span class="activity-message ${typeClass}" id="activity-msg-${index}">${escapeHtml(log.message)}</span>
         ${imageSection}
@@ -424,21 +421,24 @@ function displayActivityLogs(logs) {
   
   // Auto-scroll to bottom (most recent)
   container.scrollTop = 0;
+  
+  // Setup event listeners for activity entries
+  setupActivityEventListeners();
 }
 
 function displayLogs(logs) {
   const container = document.getElementById('logsContainer');
 
-  console.log('[Football Ad Muter Popup] Displaying logs, total count:', logs.length);
+  console.log('[Football Ad Muter Popup] Displaying analysis logs, total count:', logs.length);
 
   if (logs.length === 0) {
-    container.innerHTML = '<div class="no-logs">No logs available. Start monitoring to see analysis results.</div>';
+    container.innerHTML = '<div class="no-logs">No analysis results yet. Start monitoring to see results.</div>';
     return;
   }
 
   // Show most recent logs first (reverse chronological order)
   const recentLogs = logs.slice(-20).reverse();
-  console.log('[Football Ad Muter Popup] Showing', recentLogs.length, 'recent logs');
+  console.log('[Football Ad Muter Popup] Showing', recentLogs.length, 'recent analysis logs');
 
   container.innerHTML = recentLogs.map((log, index) => {
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
@@ -455,12 +455,9 @@ function displayLogs(logs) {
 
     let imageSection = '';
     if (log.imageUrl) {
-      // Escape quotes in the data URL for safe inline onclick
-      const escapedUrl = log.imageUrl.replace(/'/g, "\\'");
-      
-      // Create a thumbnail that can be clicked to open in new tab
+      // Store image URL as data attribute
       imageSection = `
-        <div class="log-thumbnail" onclick="openImageInNewTab('${escapedUrl}')" title="Click to view full size" style="cursor: pointer;">
+        <div class="log-thumbnail" data-image-url="${escapeHtml(log.imageUrl)}" title="Click to view full size" style="cursor: pointer;">
           <img src="${escapeHtml(log.imageUrl)}" alt="Video capture" />
         </div>
         <div class="log-thumbnail-caption">📷 Click image to view full size (or right-click → Open in new tab)</div>
@@ -476,7 +473,7 @@ function displayLogs(logs) {
       
       llmResponseSection = `
         <div class="llm-response-section">
-          <div class="llm-toggle" onclick="toggleLLMResponse('${responseId}')" style="cursor: pointer; color: #007bff; font-size: 11px; margin-top: 4px;">
+          <div class="llm-toggle" data-response-id="${responseId}" style="cursor: pointer; color: #007bff; font-size: 11px; margin-top: 4px;">
             🤖 LLM Response ${statusText} (click to expand)
           </div>
           <div id="${responseId}" class="llm-details" style="display: none; background: #f8f9fa; padding: 8px; margin-top: 4px; border-radius: 3px; font-size: 11px; border-left: 3px solid #007bff;">
@@ -487,7 +484,7 @@ function displayLogs(logs) {
     }
 
     return `
-      <div class="log-entry">
+      <div class="log-entry" data-log-index="${index}" style="cursor: pointer;" title="Click to expand/collapse details">
         <div class="log-timestamp">${timestamp}</div>
         <div class="log-result ${resultClass}">${resultText}</div>
         ${actionText}
@@ -496,6 +493,13 @@ function displayLogs(logs) {
       </div>
     `;
   }).join('');
+  
+  // Auto-scroll to top to show most recent analysis
+  container.scrollTop = 0;
+  console.log('[Football Ad Muter Popup] Analysis logs displayed and scrolled to top');
+  
+  // Add event listeners for log entries using event delegation
+  setupLogEventListeners();
 }
 
 function formatLLMResponse(llmResponse) {
@@ -543,16 +547,53 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Global function to toggle LLM response visibility
-window.toggleLLMResponse = function(responseId) {
-  const element = document.getElementById(responseId);
-  if (element) {
-    element.style.display = element.style.display === 'none' ? 'block' : 'none';
-  }
+// Setup event listeners for log entries
+function setupLogEventListeners() {
+  const container = document.getElementById('logsContainer');
+  
+  // Remove old listener if exists
+  const newContainer = container.cloneNode(true);
+  container.parentNode.replaceChild(newContainer, container);
+  
+  // Add event delegation
+  document.getElementById('logsContainer').addEventListener('click', (e) => {
+    // Handle log entry click (toggle LLM response)
+    const logEntry = e.target.closest('.log-entry');
+    if (logEntry && !e.target.closest('.log-thumbnail') && !e.target.closest('.llm-toggle')) {
+      const index = logEntry.dataset.logIndex;
+      const responseId = `llm-response-${index}`;
+      const element = document.getElementById(responseId);
+      if (element) {
+        element.style.display = element.style.display === 'none' ? 'block' : 'none';
+      }
+      return;
+    }
+    
+    // Handle thumbnail click (open image)
+    const thumbnail = e.target.closest('.log-thumbnail');
+    if (thumbnail) {
+      const imageUrl = thumbnail.dataset.imageUrl;
+      if (imageUrl) {
+        openImageInNewTab(imageUrl);
+      }
+      return;
+    }
+    
+    // Handle LLM toggle click
+    const llmToggle = e.target.closest('.llm-toggle');
+    if (llmToggle) {
+      const responseId = llmToggle.dataset.responseId;
+      const element = document.getElementById(responseId);
+      if (element) {
+        element.style.display = element.style.display === 'none' ? 'block' : 'none';
+      }
+      return;
+    }
+  });
 }
 
-// Global function to open image in new tab
-window.openImageInNewTab = function(imageUrl) {
+// Function to open image in new tab
+function openImageInNewTab(imageUrl) {
   try {
     // Open the base64 image data in a new tab
     const newWindow = window.open('', '_blank');
@@ -595,12 +636,36 @@ window.openImageInNewTab = function(imageUrl) {
   }
 }
 
-// Global function to toggle activity message expansion
-window.toggleActivityMessage = function(index) {
-  const messageElement = document.getElementById(`activity-msg-${index}`);
-  if (messageElement) {
-    messageElement.classList.toggle('expanded');
-  }
+// Setup event listeners for activity entries
+function setupActivityEventListeners() {
+  const container = document.getElementById('activityContainer');
+  
+  // Remove old listener if exists
+  const newContainer = container.cloneNode(true);
+  container.parentNode.replaceChild(newContainer, container);
+  
+  // Add event delegation
+  document.getElementById('activityContainer').addEventListener('click', (e) => {
+    // Handle thumbnail click (open image)
+    const thumbnail = e.target.closest('[data-activity-image-url]');
+    if (thumbnail) {
+      const imageUrl = thumbnail.dataset.activityImageUrl;
+      if (imageUrl) {
+        openImageInNewTab(imageUrl);
+      }
+      return;
+    }
+    
+    // Handle activity entry click (toggle message expansion)
+    const activityEntry = e.target.closest('.activity-entry');
+    if (activityEntry) {
+      const index = activityEntry.dataset.activityIndex;
+      const messageElement = document.getElementById(`activity-msg-${index}`);
+      if (messageElement) {
+        messageElement.classList.toggle('expanded');
+      }
+    }
+  });
 }
 
 // Listen for log updates from content script

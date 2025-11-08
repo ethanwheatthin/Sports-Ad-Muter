@@ -812,11 +812,7 @@ async function performCapture(video) {
         if (response.response) {
           llmResponseText = typeof response.response === 'string' 
             ? response.response 
-            : (response.response.message?.content || JSON.stringify(response.response));
-          // Truncate if too long for activity log
-          if (llmResponseText.length > 150) {
-            llmResponseText = llmResponseText.substring(0, 150) + '...';
-          }
+            : (response.response?.thinking || JSON.stringify(response.thinking));
         }
         
         // Log the analysis result
@@ -826,7 +822,7 @@ async function performCapture(video) {
           // Mute the video
           if (!video.muted) {
             console.log('[Football Ad Muter] 🔇 MUTING VIDEO - Advertisement detected');
-            logActivity(`🔇 MUTING - Advertisement detected${llmResponseText ? ' | LLM: ' + llmResponseText?.response : ''}`, 'warning');
+            logActivity(`🔇 MUTING - Advertisement detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'warning');
             video.muted = true;
             video.dataset.mutedByExtension = 'true';
             action = `Video muted (advertisement detected) - Method: ${captureResult.method}`;
@@ -837,13 +833,13 @@ async function performCapture(video) {
           // Unmute if we muted it
           if (video.dataset.mutedByExtension === 'true') {
             console.log('[Football Ad Muter] 🔊 UNMUTING VIDEO - Gameplay detected');
-            logActivity(`🔊 UNMUTING - Gameplay detected${llmResponseText ? ' | LLM: ' + llmResponseText?.response : ''}`, 'success');
+            logActivity(`🔊 UNMUTING - Gameplay detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'success');
             video.muted = false;
             delete video.dataset.mutedByExtension;
             action = `Video unmuted (gameplay detected) - Method: ${captureResult.method}`;
           } else {
             console.log('[Football Ad Muter] Gameplay detected, video not muted by extension');
-            logActivity(`✓ Gameplay confirmed${llmResponseText ? ' | LLM: ' + llmResponseText?.response : ''}`, 'info');
+            logActivity(`✓ Gameplay confirmed${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'info');
           }
         } else {
           console.log('[Football Ad Muter] Analysis returned null/undefined - no action taken');
