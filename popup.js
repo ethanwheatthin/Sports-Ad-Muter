@@ -1,3 +1,27 @@
+// Set the current tab's name in the popup
+function setCurrentTabName() {
+  const tabNameSpan = document.getElementById('currentTabName');
+  if (!tabNameSpan) return;
+
+  // Check for Chrome extension API
+  if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs && tabs.length > 0) {
+        // Prefer tab title, fallback to URL
+        const tab = tabs[0];
+        tabNameSpan.textContent = tab.title || tab.url || 'Unknown tab';
+      } else {
+        tabNameSpan.textContent = 'No active tab detected';
+      }
+    });
+  } else {
+    // Not running as an extension or API unavailable
+    tabNameSpan.textContent = 'Unavailable (not in extension context)';
+  }
+}
+
+// Run on popup load
+document.addEventListener('DOMContentLoaded', setCurrentTabName);
 // Popup script
 
 let isMonitoring = false;
@@ -10,14 +34,25 @@ const expandedLLMResponses = new Set();
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'visionProvider', 'apiKey', 'modelName'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
+  
+  // Set provider selection
+  document.getElementById('visionProvider').value = result.visionProvider || 'ollama';
+  
+  // Set existing settings
   document.getElementById('ollamaUrl').value = result.ollamaUrl || 'http://localhost:11434';
+  document.getElementById('apiKey').value = result.apiKey || '';
+  document.getElementById('modelName').value = result.modelName || '';
+  
   // Convert milliseconds to seconds for display
   const intervalMs = result.checkInterval || 10000;
   document.getElementById('checkInterval').value = intervalMs / 1000;
   isMonitoring = result.isEnabled || false;
   console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring);
+  
+  // Update UI based on provider selection
+  updateProviderUI();
   updateUI();
   loadActivityLogs();
   loadRecentFrames();
@@ -41,6 +76,67 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLog
     }
   });
 });
+
+// Provider configurations
+const providerConfigs = {
+  ollama: {
+    requiresApiKey: false,
+    requiresModel: false,
+    defaultModel: 'llava',
+    modelPlaceholder: 'llava, qwen2-vl, etc.',
+    apiKeyInfo: 'Ollama runs locally - no API key needed'
+  },
+  openai: {
+    requiresApiKey: true,
+    requiresModel: true,
+    defaultModel: 'gpt-4-vision-preview',
+    modelPlaceholder: 'gpt-4-vision-preview, gpt-4o, etc.',
+    apiKeyInfo: 'Get your API key from OpenAI Dashboard'
+  },
+  google: {
+    requiresApiKey: true,
+    requiresModel: true,
+    defaultModel: 'gemini-pro-vision',
+    modelPlaceholder: 'gemini-pro-vision, gemini-1.5-pro, etc.',
+    apiKeyInfo: 'Get your API key from Google AI Studio'
+  },
+  claude: {
+    requiresApiKey: true,
+    requiresModel: true,
+    defaultModel: 'claude-3-5-sonnet-20241022',
+    modelPlaceholder: 'claude-3-5-sonnet-20241022, claude-3-opus-20240229, etc.',
+    apiKeyInfo: 'Get your API key from Anthropic Console'
+  }
+};
+
+// Update UI based on selected provider
+function updateProviderUI() {
+  const provider = document.getElementById('visionProvider').value;
+  const config = providerConfigs[provider];
+  
+  // Show/hide sections based on provider
+  document.getElementById('ollamaSection').style.display = provider === 'ollama' ? 'block' : 'none';
+  document.getElementById('apiKeySection').style.display = config.requiresApiKey ? 'block' : 'none';
+  document.getElementById('modelSection').style.display = config.requiresModel ? 'block' : 'none';
+  
+  // Update placeholders and info text
+  if (config.requiresModel) {
+    document.getElementById('modelName').placeholder = config.modelPlaceholder;
+    document.getElementById('modelInfo').textContent = `Model to use for ${provider} vision analysis`;
+    
+    // Set default model if field is empty
+    if (!document.getElementById('modelName').value) {
+      document.getElementById('modelName').value = config.defaultModel;
+    }
+  }
+  
+  if (config.requiresApiKey) {
+    document.getElementById('apiKeyInfo').textContent = config.apiKeyInfo;
+  }
+}
+
+// Handle provider selection change
+document.getElementById('visionProvider').addEventListener('change', updateProviderUI);
 
 // Auto-refresh logs while popup is open
 function startLogRefresh() {
@@ -126,7 +222,11 @@ window.addEventListener('unload', () => {
 
 // Save settings
 document.getElementById('saveBtn').addEventListener('click', () => {
+  const visionProvider = document.getElementById('visionProvider').value;
   const ollamaUrl = document.getElementById('ollamaUrl').value;
+  const apiKey = document.getElementById('apiKey').value;
+  const modelName = document.getElementById('modelName').value;
+  
   // Convert seconds to milliseconds for storage
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
   
@@ -136,22 +236,42 @@ document.getElementById('saveBtn').addEventListener('click', () => {
     return;
   }
   
+  // Validate provider-specific requirements
+  const config = providerConfigs[visionProvider];
+  if (config.requiresApiKey && !apiKey.trim()) {
+    alert(`API Key is required for ${visionProvider}`);
+    return;
+  }
+  
+  if (config.requiresModel && !modelName.trim()) {
+    alert(`Model name is required for ${visionProvider}`);
+    return;
+  }
+  
   const checkInterval = checkIntervalSeconds * 1000;
   
-  console.log('[Football Ad Muter Popup] Saving settings:', { ollamaUrl, checkInterval: checkInterval + 'ms (' + checkIntervalSeconds + 's)' });
-  
-  chrome.storage.sync.set({
+  const settings = {
+    visionProvider: visionProvider,
     ollamaUrl: ollamaUrl,
+    apiKey: apiKey,
+    modelName: modelName,
     checkInterval: checkInterval
-  }, () => {
+  };
+  
+  console.log('[Football Ad Muter Popup] Saving settings:', { 
+    ...settings, 
+    apiKey: apiKey ? '***REDACTED***' : '',
+    checkInterval: checkInterval + 'ms (' + checkIntervalSeconds + 's)'
+  });
+  
+  chrome.storage.sync.set(settings, () => {
     // Update content script with new settings
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         console.log('[Football Ad Muter Popup] Sending settings update to content script');
         chrome.tabs.sendMessage(tabs[0].id, {
           action: 'updateSettings',
-          ollamaUrl: ollamaUrl,
-          checkInterval: checkInterval
+          ...settings
         }, (response) => {
           if (chrome.runtime.lastError) {
             console.log('[Football Ad Muter Popup] Content script not available (normal if not on a compatible page)');
@@ -265,21 +385,45 @@ document.getElementById('testApiBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Test API button clicked');
   const testBtn = document.getElementById('testApiBtn');
   const statusDiv = document.getElementById('connectionStatus');
+  const visionProvider = document.getElementById('visionProvider').value;
   const ollamaUrl = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
+  const apiKey = document.getElementById('apiKey').value;
+  const modelName = document.getElementById('modelName').value;
+  
+  // Validate required fields
+  const config = providerConfigs[visionProvider];
+  if (config.requiresApiKey && !apiKey.trim()) {
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'connection-status error';
+    statusDiv.textContent = `❌ API Key is required for ${visionProvider}`;
+    setTimeout(() => statusDiv.style.display = 'none', 5000);
+    return;
+  }
+  
+  if (config.requiresModel && !modelName.trim()) {
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'connection-status error';
+    statusDiv.textContent = `❌ Model name is required for ${visionProvider}`;
+    setTimeout(() => statusDiv.style.display = 'none', 5000);
+    return;
+  }
   
   // Update UI to show testing state
   testBtn.disabled = true;
   testBtn.textContent = 'Testing...';
   statusDiv.style.display = 'block';
   statusDiv.className = 'connection-status testing';
-  statusDiv.textContent = 'Testing connection to Ollama API...';
+  statusDiv.textContent = `Testing connection to ${visionProvider} API...`;
   
   console.log('[Football Ad Muter Popup] Sending API test request to background script');
   
   // Send test request to background script
   chrome.runtime.sendMessage({
     action: 'testApiConnection',
-    ollamaUrl: ollamaUrl
+    visionProvider: visionProvider,
+    ollamaUrl: ollamaUrl,
+    apiKey: apiKey,
+    modelName: modelName
   }, (response) => {
     if (chrome.runtime.lastError) {
       console.error('[Football Ad Muter Popup] Runtime error during API test:', chrome.runtime.lastError);
@@ -289,20 +433,28 @@ document.getElementById('testApiBtn').addEventListener('click', () => {
       console.error('[Football Ad Muter Popup] API test failed:', response.error);
       statusDiv.className = 'connection-status error';
       
-      if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
+      if (visionProvider === 'ollama' && (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted'))) {
         statusDiv.textContent = '❌ Cannot connect to Ollama. Make sure it\'s running and CORS is enabled.';
+      } else if (response.error.includes('401') || response.error.includes('authentication')) {
+        statusDiv.textContent = '❌ Invalid API key. Please check your credentials.';
+      } else if (response.error.includes('404') || response.error.includes('model not found')) {
+        statusDiv.textContent = `❌ Model "${modelName}" not found or not available.`;
       } else {
         statusDiv.textContent = `❌ Connection failed: ${response.error}`;
       }
     } else if (response.result) {
       console.log('[Football Ad Muter Popup] API test successful:', response.result);
       
-      if (response.result.hasRequiredModel) {
+      if (response.result.success) {
         statusDiv.className = 'connection-status success';
-        statusDiv.textContent = '✅ Connection successful! qwen3-vl model is available.';
+        if (visionProvider === 'ollama') {
+          statusDiv.textContent = `✅ Connection successful! ${modelName || 'Default model'} is available.`;
+        } else {
+          statusDiv.textContent = `✅ Connection successful! ${visionProvider} API is working with ${modelName}.`;
+        }
       } else {
         statusDiv.className = 'connection-status error';
-        statusDiv.textContent = '⚠️ Connected, but qwen3-vl:2b model not found. Please install it with: ollama pull qwen3-vl:2b';
+        statusDiv.textContent = response.result.message || '❌ Connection test failed';
       }
     } else {
       statusDiv.className = 'connection-status error';

@@ -5,6 +5,11 @@ let checkInterval = null;
 let ollamaUrl = 'http://localhost:11434';
 let checkIntervalTime = 10000; // 10 seconds default
 
+// Vision provider settings
+let visionProvider = 'ollama';
+let apiKey = '';
+let modelName = '';
+
 // Initialize request queue and adaptive sampler
 let requestQueue = null;
 let adaptiveSampler = null;
@@ -51,8 +56,25 @@ console.log('[Football Ad Muter] Detected site:', {
 });
 
 // Load settings from storage
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'visionProvider', 'apiKey', 'modelName'], (result) => {
   console.log('[Football Ad Muter] Loading settings from storage:', result);
+  
+  // Load vision provider settings
+  if (result.visionProvider) {
+    visionProvider = result.visionProvider;
+    console.log('[Football Ad Muter] Vision provider set to:', visionProvider);
+  }
+  
+  if (result.apiKey) {
+    apiKey = result.apiKey;
+    console.log('[Football Ad Muter] API key loaded for provider:', visionProvider);
+  }
+  
+  if (result.modelName) {
+    modelName = result.modelName;
+    console.log('[Football Ad Muter] Model name set to:', modelName);
+  }
+  
   if (result.ollamaUrl) {
     ollamaUrl = result.ollamaUrl;
     // Clean up any old OpenWebUI URLs that might be cached
@@ -62,6 +84,7 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) =>
     }
     console.log('[Football Ad Muter] Ollama URL set to:', ollamaUrl);
   }
+  
   if (result.checkInterval) {
     checkIntervalTime = result.checkInterval;
     console.log('[Football Ad Muter] Check interval set to:', checkIntervalTime, 'ms');
@@ -177,9 +200,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ status: 'stopped' });
   } else if (request.action === 'updateSettings') {
     console.log('[Football Ad Muter] Settings update received:', {
+      newVisionProvider: request.visionProvider,
       newOllamaUrl: request.ollamaUrl,
-      newCheckInterval: request.checkInterval
+      newModelName: request.modelName,
+      newCheckInterval: request.checkInterval,
+      hasApiKey: !!request.apiKey
     });
+    
+    // Update all settings
+    visionProvider = request.visionProvider || visionProvider;
+    apiKey = request.apiKey || apiKey;
+    modelName = request.modelName || modelName;
     ollamaUrl = request.ollamaUrl || ollamaUrl;
     checkIntervalTime = request.checkInterval || checkIntervalTime;
     
@@ -829,7 +860,7 @@ async function performCapture(video) {
     // Mark this capture in the adaptive sampler
     adaptiveSampler.markCapture();
     
-    logActivity(`📸 Frame captured (${captureResult.method})`, 'info');
+    // logActivity(`📸 Frame captured (${captureResult.method})`, 'info');
     console.log('[Football Ad Muter] Converting blob to base64...');
     
     const reader = new FileReader();
@@ -845,7 +876,7 @@ async function performCapture(video) {
         console.log('[Football Ad Muter] Image converted to base64, length:', base64Image.length, 'characters');
         
         // Log the frame capture with the image data
-        logActivityWithImage(`📸 Frame captured (${captureResult.method})`, 'info', reader.result);
+        // logActivityWithImage(`📸 Frame captured (${captureResult.method})`, 'info', reader.result);
         
         // Log that we're queueing the frame for analysis
         const queueStatus = requestQueue.getStatus();
@@ -872,7 +903,10 @@ async function performCapture(video) {
               chrome.runtime.sendMessage({
                 action: 'analyzeImage',
                 base64Image: data.base64Image,
-                ollamaUrl: data.ollamaUrl
+                visionProvider: visionProvider,
+                ollamaUrl: ollamaUrl,
+                apiKey: apiKey,
+                modelName: modelName
               }, (response) => {
                 clearTimeout(timeout);
                 
