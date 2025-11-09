@@ -444,6 +444,72 @@
     .activity-error {
       color: #dc3545;
     }
+    
+    .frame-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .frame-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .frame-card-image {
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    
+    .frame-card-time {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    
+    .frame-card-result {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    
+    .frame-card-result.gameplay {
+      color: #28a745;
+    }
+    
+    .frame-card-result.ad {
+      color: #dc3545;
+    }
+    
+    .frame-card-result.error {
+      color: #ffc107;
+    }
+    
+    .frame-card-llm {
+      font-size: 10px;
+      color: #555;
+      line-height: 1.4;
+      max-height: 60px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+    
+    .frame-card-expand {
+      font-size: 10px;
+      color: #007bff;
+      margin-top: 4px;
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -498,6 +564,16 @@
       <div><strong>API Success:</strong> <span id="apiSuccessRate">0</span>% (<span id="completedRequests">0</span>/<span id="totalRequests">0</span>)</div>
       <div><strong>Avg Response:</strong> <span id="avgProcessingTime">0</span>ms</div>
       <div><strong>Sampling:</strong> <span id="currentInterval">0</span>s interval, <span id="samplingMode">normal</span> mode</div>
+    </div>
+  </div>
+  
+  <div class="logs-section">
+    <div class="logs-header">
+      <h3 class="logs-title">Recent Frame Captures</h3>
+      <button class="clear-logs" id="clearFramesBtn">Clear</button>
+    </div>
+    <div id="recentFramesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="no-logs">No frames captured yet. Start monitoring to see captured frames.</div>
     </div>
   </div>
   

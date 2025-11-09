@@ -9,7 +9,8 @@ const expandedLogEntries = new Set();
 const expandedLLMResponses = new Set();
 
 // Load current settings
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLogs', 'activityLogs'], (result) => {
+// Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
   document.getElementById('ollamaUrl').value = result.ollamaUrl || 'http://localhost:11434';
   // Convert milliseconds to seconds for display
@@ -18,8 +19,8 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLog
   isMonitoring = result.isEnabled || false;
   console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring);
   updateUI();
-  loadLogs();
   loadActivityLogs();
+  loadRecentFrames();
   
   // Start auto-refresh of logs while popup is open
   startLogRefresh();
@@ -49,8 +50,8 @@ function startLogRefresh() {
   
   // Refresh logs every 2 seconds while popup is open
   refreshInterval = setInterval(() => {
-    loadLogs();
     loadActivityLogs();
+    loadRecentFrames();
     // also update the small video status indicators
     updateVideoStatus();
     // Update queue and API metrics
@@ -229,15 +230,15 @@ document.getElementById('stopBtn').addEventListener('click', () => {
 });
 
 // Clear logs
-document.getElementById('clearLogsBtn').addEventListener('click', () => {
-  console.log('[Football Ad Muter Popup] Clear analysis logs button clicked');
-  chrome.storage.sync.set({ analysisLogs: [] }, () => {
-    console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');
-    // Clear expanded state tracking for analysis logs
-    expandedLLMResponses.clear();
-    loadLogs();
-  });
-});
+// document.getElementById('clearLogsBtn').addEventListener('click', () => {
+//   console.log('[Football Ad Muter Popup] Clear analysis logs button clicked');
+//   chrome.storage.sync.set({ analysisLogs: [] }, () => {
+//     console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');
+//     // Clear expanded state tracking for analysis logs
+//     expandedLLMResponses.clear();
+//     loadLogs();
+//   });
+// });
 
 // Clear activity logs
 document.getElementById('clearActivityBtn').addEventListener('click', () => {
@@ -247,6 +248,15 @@ document.getElementById('clearActivityBtn').addEventListener('click', () => {
     // Clear expanded state tracking for activity logs
     expandedActivityEntries.clear();
     loadActivityLogs();
+  });
+});
+
+// Clear recent frames
+document.getElementById('clearFramesBtn').addEventListener('click', () => {
+  console.log('[Football Ad Muter Popup] Clear frames button clicked');
+  chrome.storage.local.set({ analysisLogs: [] }, () => {
+    console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');
+    loadRecentFrames();
   });
 });
 
@@ -440,19 +450,130 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-function loadLogs() {
-  chrome.storage.sync.get(['analysisLogs'], (result) => {
-    const logs = result.analysisLogs || [];
-    console.log('[Football Ad Muter Popup] Loading', logs.length, 'logs from storage');
-    displayLogs(logs);
-  });
-}
+// Removed old analysis logs functions - now using displayRecentFrames() instead
+// function loadLogs() {
+//   chrome.storage.sync.get(['analysisLogs'], (result) => {
+//     const logs = result.analysisLogs || [];
+//     console.log('[Football Ad Muter Popup] Loading', logs.length, 'logs from storage');
+//     displayLogs(logs);
+//   });
+// }
 
 function loadActivityLogs() {
   chrome.storage.sync.get(['activityLogs'], (result) => {
     const logs = result.activityLogs || [];
     console.log('[Football Ad Muter Popup] Loading', logs.length, 'activity logs from storage');
     displayActivityLogs(logs);
+  });
+}
+
+function loadRecentFrames() {
+  // Use storage.local for analysisLogs (contains large base64 images)
+  chrome.storage.local.get(['analysisLogs'], (result) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter Popup] Error loading from storage.local:', chrome.runtime.lastError);
+      displayRecentFrames([]);
+      return;
+    }
+    
+    const logs = result.analysisLogs || [];
+    console.log('[Football Ad Muter Popup] ✅ Loaded', logs.length, 'analysis logs from storage.local');
+    
+    // Debug: Show the first few log entries to understand structure
+    if (logs.length > 0) {
+      console.log('[Football Ad Muter Popup] First log entry:', logs[0]);
+      console.log('[Football Ad Muter Popup] Last log entry:', logs[logs.length - 1]);
+      
+      // Count how many have images
+      const withImages = logs.filter(log => log.imageUrl).length;
+      console.log('[Football Ad Muter Popup] Logs with imageUrl:', withImages);
+    } else {
+      console.log('[Football Ad Muter Popup] ⚠️ No analysis logs found in storage.local');
+    }
+    
+    displayRecentFrames(logs);
+  });
+}
+
+function displayRecentFrames(logs) {
+  const container = document.getElementById('recentFramesContainer');
+  
+  console.log('[Football Ad Muter Popup] Total logs:', logs.length);
+  console.log('[Football Ad Muter Popup] Sample log:', logs.length > 0 ? logs[logs.length - 1] : 'none');
+  
+  // Filter logs that have images (LLM response is optional)
+  const logsWithImages = logs.filter(log => log.imageUrl);
+  
+  console.log('[Football Ad Muter Popup] Logs with images:', logsWithImages.length);
+  
+  if (logsWithImages.length === 0) {
+    container.innerHTML = '<div class="no-logs" style="grid-column: 1 / -1;">No frames captured yet. Start monitoring to see captured frames.</div>';
+    return;
+  }
+  
+  // Get the last 3 frames
+  const recentFrames = logsWithImages.slice(-3).reverse();
+  
+  console.log('[Football Ad Muter Popup] Displaying', recentFrames.length, 'recent frames');
+  
+  container.innerHTML = recentFrames.map((log, index) => {
+    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+    
+    let resultClass = 'error';
+    let resultText = 'Analyzing...';
+    
+    if (log.result === true) {
+      resultClass = 'gameplay';
+      resultText = '✓ Gameplay';
+    } else if (log.result === false) {
+      resultClass = 'ad';
+      resultText = '⚠ Advertisement';
+    } else if (log.result === null && log.action) {
+      // System message/action log
+      resultClass = 'error';
+      resultText = '📝 ' + log.action.substring(0, 30) + (log.action.length > 30 ? '...' : '');
+    }
+    
+    // Extract LLM response text
+    let llmText = '';
+    if (log.llmResponse && !log.llmResponse.error) {
+      if (typeof log.llmResponse.response === 'string') {
+        llmText = log.llmResponse.response;
+      } else if (log.llmResponse.response?.message?.content) {
+        llmText = log.llmResponse.response.message.content;
+      }
+    } else if (log.llmResponse?.error) {
+      llmText = 'Error: ' + log.llmResponse.error;
+    } else if (log.action && !log.llmResponse) {
+      llmText = log.action;
+    }
+    
+    return `
+      <div class="frame-card" data-frame-url="${escapeHtml(log.imageUrl)}" title="Click to open in new tab">
+        <img src="${escapeHtml(log.imageUrl)}" alt="Captured frame" class="frame-card-image" />
+        <div class="frame-card-time">📅 ${timestamp}</div>
+        <div class="frame-card-result ${resultClass}">${resultText}</div>
+        ${llmText ? `<div class="frame-card-llm">${escapeHtml(llmText)}</div>` : ''}
+        <div class="frame-card-expand">Click to view full size</div>
+      </div>
+    `;
+  }).join('');
+  
+  console.log('[Football Ad Muter Popup] Frame cards HTML generated');
+  
+  // Add click event listeners to frame cards
+  setupFrameCardListeners();
+}
+
+function setupFrameCardListeners() {
+  const frameCards = document.querySelectorAll('.frame-card');
+  frameCards.forEach(card => {
+    card.addEventListener('click', () => {
+      const imageUrl = card.dataset.frameUrl;
+      if (imageUrl) {
+        openImageInNewTab(imageUrl);
+      }
+    });
   });
 }
 
@@ -503,124 +624,22 @@ function displayActivityLogs(logs) {
   setupActivityEventListeners();
 }
 
+// Removed old displayLogs, formatLLMResponse, and setupLogEventListeners functions
+// These are no longer needed since we're using displayRecentFrames() instead
+/*
 function displayLogs(logs) {
   const container = document.getElementById('logsContainer');
-
-  console.log('[Football Ad Muter Popup] Displaying analysis logs, total count:', logs.length);
-
-  if (logs.length === 0) {
-    container.innerHTML = '<div class="no-logs">No analysis results yet. Start monitoring to see results.</div>';
-    return;
-  }
-
-  // Show most recent logs first (reverse chronological order)
-  const recentLogs = logs.slice(-20).reverse();
-  console.log('[Football Ad Muter Popup] Showing', recentLogs.length, 'recent analysis logs');
-
-  container.innerHTML = recentLogs.map((log, index) => {
-    const timestamp = new Date(log.timestamp).toLocaleTimeString();
-    const resultClass = log.result === true ? 'log-gameplay' : 
-                       log.result === false ? 'log-ad' : 'log-error';
-    const resultText = log.result === true ? '✓ Gameplay detected' :
-                      log.result === false ? '⚠ Advertisement detected' :
-                      'System message';
-
-    let actionText = '';
-    if (log.action) {
-      actionText = `<div class="log-action">${log.action}</div>`;
-    }
-
-    let imageSection = '';
-    if (log.imageUrl) {
-      // Store image URL as data attribute
-      imageSection = `
-        <div class="log-thumbnail" data-image-url="${escapeHtml(log.imageUrl)}" title="Click to view full size" style="cursor: pointer;">
-          <img src="${escapeHtml(log.imageUrl)}" alt="Video capture" />
-        </div>
-        <div class="log-thumbnail-caption">📷 Click image to view full size (or right-click → Open in new tab)</div>
-      `;
-    }
-
-    let llmResponseSection = '';
-    if (log.llmResponse) {
-      // Create unique key for this LLM response
-      const responseKey = `${log.timestamp}-llm`;
-      const isExpanded = expandedLLMResponses.has(responseKey);
-      const displayStyle = isExpanded ? 'block' : 'none';
-      
-      const hasError = log.llmResponse.error;
-      const statusText = hasError ? '❌ Error' : '✅ Success';
-      const statusClass = hasError ? 'log-error' : 'log-gameplay';
-      
-      llmResponseSection = `
-        <div class="llm-response-section">
-          <div class="llm-toggle" data-response-key="${escapeHtml(responseKey)}" style="cursor: pointer; color: #007bff; font-size: 11px; margin-top: 4px;">
-            🤖 LLM Response ${statusText} (click to ${isExpanded ? 'collapse' : 'expand'})
-          </div>
-          <div data-response-key="${escapeHtml(responseKey)}" class="llm-details" style="display: ${displayStyle}; background: #f8f9fa; padding: 8px; margin-top: 4px; border-radius: 3px; font-size: 11px; border-left: 3px solid #007bff;">
-            ${formatLLMResponse(log.llmResponse)}
-          </div>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="log-entry" data-log-timestamp="${log.timestamp}" style="cursor: pointer;" title="Click to expand/collapse details">
-        <div class="log-timestamp">${timestamp}</div>
-        <div class="log-result ${resultClass}">${resultText}</div>
-        ${actionText}
-        ${imageSection}
-        ${llmResponseSection}
-      </div>
-    `;
-  }).join('');
-  
-  // Auto-scroll to top to show most recent analysis
-  container.scrollTop = 0;
-  console.log('[Football Ad Muter Popup] Analysis logs displayed and scrolled to top');
-  
-  // Add event listeners for log entries using event delegation
-  setupLogEventListeners();
+  ... (commented out for brevity)
 }
 
 function formatLLMResponse(llmResponse) {
-  if (llmResponse.error) {
-    return `
-      <div style="color: #dc3545;">
-        <strong>Error:</strong> ${escapeHtml(llmResponse.error)}
-      </div>
-    `;
-  }
-
-  let html = '';
-  
-  if (llmResponse.model) {
-    html += `<div style="margin-bottom: 4px;"><strong>Model:</strong> ${escapeHtml(llmResponse.model)}</div>`;
-  }
-  
-  if (llmResponse.result !== undefined) {
-    const resultText = llmResponse.result === true ? 'Gameplay' : 
-                      llmResponse.result === false ? 'Advertisement' : 'Unknown';
-    const resultColor = llmResponse.result === true ? '#28a745' : 
-                       llmResponse.result === false ? '#dc3545' : '#ffc107';
-    html += `<div style="margin-bottom: 4px;"><strong>Analysis Result:</strong> <span style="color: ${resultColor}; font-weight: 600;">${resultText}</span></div>`;
-  }
-  
-  if (llmResponse.response) {
-    const responseText = typeof llmResponse.response === 'string' 
-      ? llmResponse.response 
-      : llmResponse.response.message?.content || JSON.stringify(llmResponse.response);
-    
-    html += `<div style="margin-top: 6px; margin-bottom: 4px;"><strong>LLM Raw Response:</strong></div>`;
-    html += `<div style="background: #fff; padding: 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 10px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; border: 1px solid #dee2e6;">${escapeHtml(responseText)}</div>`;
-  }
-  
-  if (llmResponse.processingTime) {
-    html += `<div style="margin-top: 6px; color: #666; font-size: 10px;"><strong>Processing Time:</strong> ${llmResponse.processingTime}ms</div>`;
-  }
-  
-  return html || '<div style="color: #999;">No additional details available</div>';
+  ... (commented out for brevity)
 }
+
+function setupLogEventListeners() {
+  ... (commented out for brevity)
+}
+*/
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -628,54 +647,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Setup event listeners for log entries
-function setupLogEventListeners() {
-  const container = document.getElementById('logsContainer');
-  
-  // Remove old listener if exists
-  const newContainer = container.cloneNode(true);
-  container.parentNode.replaceChild(newContainer, container);
-  
-  // Add event delegation
-  document.getElementById('logsContainer').addEventListener('click', (e) => {
-    // Handle thumbnail click (open image)
-    const thumbnail = e.target.closest('.log-thumbnail');
-    if (thumbnail) {
-      const imageUrl = thumbnail.dataset.imageUrl;
-      if (imageUrl) {
-        openImageInNewTab(imageUrl);
-      }
-      return;
-    }
-    
-    // Handle LLM toggle click
-    const llmToggle = e.target.closest('.llm-toggle');
-    if (llmToggle) {
-      const responseKey = llmToggle.dataset.responseKey;
-      if (responseKey) {
-        // Find the details element with matching key
-        const detailsElement = document.querySelector(`.llm-details[data-response-key="${responseKey}"]`);
-        if (detailsElement) {
-          const isVisible = detailsElement.style.display !== 'none';
-          detailsElement.style.display = isVisible ? 'none' : 'block';
-          
-          // Update the set of expanded responses
-          if (isVisible) {
-            expandedLLMResponses.delete(responseKey);
-          } else {
-            expandedLLMResponses.add(responseKey);
-          }
-          
-          // Update toggle text
-          const hasError = llmToggle.textContent.includes('❌ Error');
-          const statusText = hasError ? '❌ Error' : '✅ Success';
-          llmToggle.textContent = `🤖 LLM Response ${statusText} (click to ${isVisible ? 'expand' : 'collapse'})`;
-        }
-      }
-      return;
-    }
-  });
-}
+// Removed setupLogEventListeners - no longer needed
 
 // Function to open image in new tab
 function openImageInNewTab(imageUrl) {
@@ -767,7 +739,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   try {
     if (request.action === 'logUpdate') {
       console.log('[Football Ad Muter Popup] Analysis log update received, refreshing display');
-      loadLogs();
+      loadRecentFrames();
       sendResponse({ status: 'received' });
     } else if (request.action === 'activityUpdate') {
       console.log('[Football Ad Muter Popup] Activity log update received, refreshing display');

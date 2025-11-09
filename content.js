@@ -849,7 +849,7 @@ async function performCapture(video) {
         
         // Log that we're queueing the frame for analysis
         const queueStatus = requestQueue.getStatus();
-        logActivity(`📋 Queued for analysis (Queue: ${queueStatus.queueLength}, Active: ${queueStatus.activeRequests})`, 'info');
+        // logActivity(`📋 Queued for analysis (Queue: ${queueStatus.queueLength}, Active: ${queueStatus.activeRequests})`, 'info');
         
         // Enqueue the analysis request instead of sending immediately
         const requestId = requestQueue.enqueue({
@@ -1061,17 +1061,30 @@ function saveLogEntry(result, action, imageDataUrl = null, llmResponse = null) {
     hasLLMResponse: !!llmResponse
   });
   
-  chrome.storage.sync.get(['analysisLogs'], (storage) => {
+  // Use storage.local instead of storage.sync because base64 images are too large
+  // storage.sync has 8KB per item limit, storage.local has ~10MB limit
+  chrome.storage.local.get(['analysisLogs'], (storage) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter] ❌ Error reading storage.local:', chrome.runtime.lastError);
+      return;
+    }
+    
     const logs = storage.analysisLogs || [];
     logs.push(logEntry);
     
-    // Keep only the last 100 entries to prevent storage overflow
-    const trimmedLogs = logs.slice(-100);
+    // Keep only the last 50 entries to prevent storage overflow (even local has limits)
+    const trimmedLogs = logs.slice(-50);
     
-    console.log('[Football Ad Muter] Total logs in storage:', trimmedLogs.length);
+    console.log('[Football Ad Muter] Total logs in storage.local:', trimmedLogs.length);
     
-    chrome.storage.sync.set({ analysisLogs: trimmedLogs }, () => {
-      console.log('[Football Ad Muter] Log entry saved to storage');
+    chrome.storage.local.set({ analysisLogs: trimmedLogs }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Football Ad Muter] ❌ Error saving to storage.local:', chrome.runtime.lastError.message);
+        console.error('[Football Ad Muter] Image size may be too large even for local storage');
+        return;
+      }
+      
+      console.log('[Football Ad Muter] ✅ Log entry saved to storage.local');
       // Notify popup to refresh logs if it's open
       try {
         chrome.runtime.sendMessage({ action: 'logUpdate' }, (response) => {
