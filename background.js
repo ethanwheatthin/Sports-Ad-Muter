@@ -154,7 +154,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl) {
     console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
     const prompt = `You are a specialized image classifier for detecting live sports gameplay.
 
-Your task: Analyze the provided image and determine if it shows ACTIVE SPORTS GAMEPLAY.
+Your task: Analyze the provided image and determine if it shows any element of a broadcast of a sports event
 
 RETURN ONLY: true OR false (lowercase, no other text)
 
