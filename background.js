@@ -3,6 +3,16 @@
 // Keep service worker alive
 let keepAliveInterval;
 
+// Track API performance metrics
+let apiMetrics = {
+  totalRequests: 0,
+  successfulRequests: 0,
+  failedRequests: 0,
+  totalProcessingTime: 0,
+  averageProcessingTime: 0,
+  lastRequestTime: 0
+};
+
 function keepServiceWorkerAlive() {
   keepAliveInterval = setInterval(() => {
     chrome.runtime.getPlatformInfo(() => {
@@ -46,20 +56,62 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Football Ad Muter Background] Processing image analysis request');
     console.log('[Football Ad Muter Background] Image size:', request.base64Image.length);
     console.log('[Football Ad Muter Background] Ollama URL:', request.ollamaUrl);
+    console.log('[Football Ad Muter Background] API Metrics:', apiMetrics);
+    
+    // Increment request counter
+    apiMetrics.totalRequests++;
+    apiMetrics.lastRequestTime = Date.now();
     
     // Handle async operation properly
     analyzeWithOllama(request.base64Image, request.ollamaUrl)
       .then(analysisResult => {
         console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
+        
+        // Update metrics
+        if (analysisResult.error) {
+          apiMetrics.failedRequests++;
+        } else {
+          apiMetrics.successfulRequests++;
+        }
+        
+        if (analysisResult.processingTime) {
+          apiMetrics.totalProcessingTime += analysisResult.processingTime;
+          apiMetrics.averageProcessingTime = 
+            apiMetrics.totalProcessingTime / (apiMetrics.successfulRequests + apiMetrics.failedRequests);
+        }
+        
+        console.log('[Football Ad Muter Background] Updated API Metrics:', apiMetrics);
+        
         // Return the full analysis result object (includes result, model, response, processingTime, etc.)
         sendResponse(analysisResult);
       })
       .catch(error => {
         console.error('[Football Ad Muter Background] Analysis failed:', error);
+        apiMetrics.failedRequests++;
         sendResponse({ result: null, error: error.message });
       });
     
     return true; // Keep the message channel open for async response
+  }
+  
+  if (request.action === 'getApiMetrics') {
+    console.log('[Football Ad Muter Background] API metrics requested');
+    sendResponse({ metrics: apiMetrics });
+    return false;
+  }
+  
+  if (request.action === 'resetApiMetrics') {
+    console.log('[Football Ad Muter Background] Resetting API metrics');
+    apiMetrics = {
+      totalRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
+      totalProcessingTime: 0,
+      averageProcessingTime: 0,
+      lastRequestTime: 0
+    };
+    sendResponse({ status: 'reset' });
+    return false;
   }
   
   if (request.action === 'logUpdate') {
@@ -152,39 +204,36 @@ async function analyzeWithOllama(base64Image, ollamaUrl) {
   
   try {
     console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
-    const prompt = `You are a specialized image classifier for detecting live sports gameplay.
+    const prompt = `SPORTS BROADCAST DETECTOR - RAPID MODE
 
-Your task: Analyze the provided image and determine if it shows any element of a broadcast of a sports event
+INPUT: Image
+OUTPUT: true OR false (only)
 
-RETURN ONLY: true OR false (lowercase, no other text)
+TRUE = Live sports broadcast content:
+• Active gameplay/competition
+• Athletes in action on field/court
+• Sports venue with players
+• Game action (running, passing, shooting, etc.)
+• Scoreboard during play
+• Sports broadcast angles
+• Studio analysts/commentators
+• Replays with graphics
+• Sideline interviews
+• Pre/post-game coverage
+• Crowd shots
+• Press conferences
+• Player/coach closeups
+• Sports-related content
 
-Return "true" if the image contains:
-- Active sports gameplay (football, basketball, soccer, baseball, hockey, tennis, golf, racing, etc.)
-- Athletes competing on a field/court/track during live action
-- Clear view of a sports venue with players/athletes in uniform/gear
-- Game action (running, passing, shooting, tackling, kicking, scoring, racing, etc.)
-- Scoreboard visible with game clock/score during active play
-- Typical sports broadcast camera angles showing the action
-- Live competition in progress
-- Studio analysts or commentators
-- Replays with obvious overlay graphics
-- Sideline interviews
-- Pre-game or post-game coverage
-- Crowd shots without gameplay
-- Press conferences
-- Loading screens or channel logos
-- Close up shots of players, coaches, commentators, or anything related to a sporting event
+FALSE = Everything else:
+• Commercials/ads
+• Halftime entertainment  
+• Non-sports content
+• Static graphics/promos
 
+DECISION RULE: When uncertain → false
 
-Return "false" if the image contains:
-- Commercials or advertisements
-- Halftime shows or entertainment
-- Any non-sports content
-- Static graphics or promotional content
-
-Be strict: When in doubt about active gameplay, return "false".
-
-OUTPUT FORMAT: Only output "true" or "false" - nothing else.`;
+RESPOND: true OR false (nothing else)`;
 
     console.log('[Football Ad Muter Background] Making API request to:', `${ollamaUrl}/api/generate`);
     console.log('[Football Ad Muter Background] Request payload size:', {

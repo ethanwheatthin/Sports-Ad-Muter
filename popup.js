@@ -3,6 +3,11 @@
 let isMonitoring = false;
 let refreshInterval = null;
 
+// Track expanded state of activity and log entries
+const expandedActivityEntries = new Set();
+const expandedLogEntries = new Set();
+const expandedLLMResponses = new Set();
+
 // Load current settings
 chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'analysisLogs', 'activityLogs'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
@@ -48,7 +53,67 @@ function startLogRefresh() {
     loadActivityLogs();
     // also update the small video status indicators
     updateVideoStatus();
+    // Update queue and API metrics
+    updateMetrics();
   }, 2000);
+}
+
+// Update queue and API metrics display
+function updateMetrics() {
+  if (!isMonitoring) {
+    return;
+  }
+  
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    
+    // Get queue status from content script
+    chrome.tabs.sendMessage(tabs[0].id, { action: 'getQueueStatus' }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        return;
+      }
+      
+      // Update queue metrics
+      if (response.queue) {
+        document.getElementById('queueLength').textContent = response.queue.queueLength || 0;
+        document.getElementById('activeRequests').textContent = response.queue.activeRequests || 0;
+        document.getElementById('droppedRequests').textContent = response.queue.stats.droppedRequests || 0;
+        document.getElementById('completedRequests').textContent = response.queue.stats.completedRequests || 0;
+        document.getElementById('totalRequests').textContent = response.queue.stats.totalRequests || 0;
+        
+        const successRate = response.queue.stats.totalRequests > 0
+          ? Math.round((response.queue.stats.completedRequests / response.queue.stats.totalRequests) * 100)
+          : 0;
+        document.getElementById('apiSuccessRate').textContent = successRate;
+        
+        const avgTime = Math.round(response.queue.stats.averageProcessingTime || 0);
+        document.getElementById('avgProcessingTime').textContent = avgTime;
+      }
+      
+      // Update sampler metrics
+      if (response.sampler) {
+        const intervalSeconds = (response.sampler.currentInterval / 1000).toFixed(1);
+        document.getElementById('currentInterval').textContent = intervalSeconds;
+        
+        let mode = 'normal';
+        if (response.sampler.isAdDetected) {
+          mode = 'ad detected (fast)';
+        } else if (response.sampler.gameplayConfidence >= 3) {
+          mode = 'stable gameplay';
+        }
+        document.getElementById('samplingMode').textContent = mode;
+      }
+    });
+  });
+  
+  // Get API metrics from background script
+  chrome.runtime.sendMessage({ action: 'getApiMetrics' }, (response) => {
+    if (chrome.runtime.lastError || !response || !response.metrics) {
+      return;
+    }
+    
+    // Additional metrics from background could be displayed here if needed
+  });
 }
 
 // Stop refresh when popup closes
@@ -168,6 +233,8 @@ document.getElementById('clearLogsBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Clear analysis logs button clicked');
   chrome.storage.sync.set({ analysisLogs: [] }, () => {
     console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');
+    // Clear expanded state tracking for analysis logs
+    expandedLLMResponses.clear();
     loadLogs();
   });
 });
@@ -177,6 +244,8 @@ document.getElementById('clearActivityBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Clear activity logs button clicked');
   chrome.storage.sync.set({ activityLogs: [] }, () => {
     console.log('[Football Ad Muter Popup] Activity logs cleared from storage');
+    // Clear expanded state tracking for activity logs
+    expandedActivityEntries.clear();
     loadActivityLogs();
   });
 });
@@ -278,17 +347,20 @@ function updateUI() {
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
   const status = document.getElementById('status');
+  const metricsSection = document.getElementById('metricsSection');
   
   if (isMonitoring) {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     status.textContent = 'Monitoring Active';
     status.className = 'status active';
+    metricsSection.style.display = 'block';
   } else {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     status.textContent = 'Inactive';
     status.className = 'status inactive';
+    metricsSection.style.display = 'none';
   }
 }
 
@@ -399,6 +471,11 @@ function displayActivityLogs(logs) {
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
     const typeClass = `activity-${log.type || 'info'}`;
     
+    // Check if this entry should be expanded
+    const logKey = `${log.timestamp}-${log.message}`;
+    const isExpanded = expandedActivityEntries.has(logKey);
+    const expandedClass = isExpanded ? 'expanded' : '';
+    
     let imageSection = '';
     if (log.imageUrl) {
       // Store image URL as data attribute
@@ -411,9 +488,9 @@ function displayActivityLogs(logs) {
     }
     
     return `
-      <div class="activity-entry" data-activity-index="${index}" title="Click to expand/collapse">
+      <div class="activity-entry" data-activity-key="${escapeHtml(logKey)}" title="Click to expand/collapse">
         <span class="activity-time">${timestamp}</span>
-        <span class="activity-message ${typeClass}" id="activity-msg-${index}">${escapeHtml(log.message)}</span>
+        <span class="activity-message ${typeClass} ${expandedClass}" data-activity-key="${escapeHtml(logKey)}">${escapeHtml(log.message)}</span>
         ${imageSection}
       </div>
     `;
@@ -466,17 +543,21 @@ function displayLogs(logs) {
 
     let llmResponseSection = '';
     if (log.llmResponse) {
-      const responseId = `llm-response-${index}`;
+      // Create unique key for this LLM response
+      const responseKey = `${log.timestamp}-llm`;
+      const isExpanded = expandedLLMResponses.has(responseKey);
+      const displayStyle = isExpanded ? 'block' : 'none';
+      
       const hasError = log.llmResponse.error;
       const statusText = hasError ? '❌ Error' : '✅ Success';
       const statusClass = hasError ? 'log-error' : 'log-gameplay';
       
       llmResponseSection = `
         <div class="llm-response-section">
-          <div class="llm-toggle" data-response-id="${responseId}" style="cursor: pointer; color: #007bff; font-size: 11px; margin-top: 4px;">
-            🤖 LLM Response ${statusText} (click to expand)
+          <div class="llm-toggle" data-response-key="${escapeHtml(responseKey)}" style="cursor: pointer; color: #007bff; font-size: 11px; margin-top: 4px;">
+            🤖 LLM Response ${statusText} (click to ${isExpanded ? 'collapse' : 'expand'})
           </div>
-          <div id="${responseId}" class="llm-details" style="display: none; background: #f8f9fa; padding: 8px; margin-top: 4px; border-radius: 3px; font-size: 11px; border-left: 3px solid #007bff;">
+          <div data-response-key="${escapeHtml(responseKey)}" class="llm-details" style="display: ${displayStyle}; background: #f8f9fa; padding: 8px; margin-top: 4px; border-radius: 3px; font-size: 11px; border-left: 3px solid #007bff;">
             ${formatLLMResponse(log.llmResponse)}
           </div>
         </div>
@@ -484,7 +565,7 @@ function displayLogs(logs) {
     }
 
     return `
-      <div class="log-entry" data-log-index="${index}" style="cursor: pointer;" title="Click to expand/collapse details">
+      <div class="log-entry" data-log-timestamp="${log.timestamp}" style="cursor: pointer;" title="Click to expand/collapse details">
         <div class="log-timestamp">${timestamp}</div>
         <div class="log-result ${resultClass}">${resultText}</div>
         ${actionText}
@@ -557,18 +638,6 @@ function setupLogEventListeners() {
   
   // Add event delegation
   document.getElementById('logsContainer').addEventListener('click', (e) => {
-    // Handle log entry click (toggle LLM response)
-    const logEntry = e.target.closest('.log-entry');
-    if (logEntry && !e.target.closest('.log-thumbnail') && !e.target.closest('.llm-toggle')) {
-      const index = logEntry.dataset.logIndex;
-      const responseId = `llm-response-${index}`;
-      const element = document.getElementById(responseId);
-      if (element) {
-        element.style.display = element.style.display === 'none' ? 'block' : 'none';
-      }
-      return;
-    }
-    
     // Handle thumbnail click (open image)
     const thumbnail = e.target.closest('.log-thumbnail');
     if (thumbnail) {
@@ -582,10 +651,26 @@ function setupLogEventListeners() {
     // Handle LLM toggle click
     const llmToggle = e.target.closest('.llm-toggle');
     if (llmToggle) {
-      const responseId = llmToggle.dataset.responseId;
-      const element = document.getElementById(responseId);
-      if (element) {
-        element.style.display = element.style.display === 'none' ? 'block' : 'none';
+      const responseKey = llmToggle.dataset.responseKey;
+      if (responseKey) {
+        // Find the details element with matching key
+        const detailsElement = document.querySelector(`.llm-details[data-response-key="${responseKey}"]`);
+        if (detailsElement) {
+          const isVisible = detailsElement.style.display !== 'none';
+          detailsElement.style.display = isVisible ? 'none' : 'block';
+          
+          // Update the set of expanded responses
+          if (isVisible) {
+            expandedLLMResponses.delete(responseKey);
+          } else {
+            expandedLLMResponses.add(responseKey);
+          }
+          
+          // Update toggle text
+          const hasError = llmToggle.textContent.includes('❌ Error');
+          const statusText = hasError ? '❌ Error' : '✅ Success';
+          llmToggle.textContent = `🤖 LLM Response ${statusText} (click to ${isVisible ? 'expand' : 'collapse'})`;
+        }
       }
       return;
     }
@@ -659,10 +744,18 @@ function setupActivityEventListeners() {
     // Handle activity entry click (toggle message expansion)
     const activityEntry = e.target.closest('.activity-entry');
     if (activityEntry) {
-      const index = activityEntry.dataset.activityIndex;
-      const messageElement = document.getElementById(`activity-msg-${index}`);
-      if (messageElement) {
+      const logKey = activityEntry.dataset.activityKey;
+      const messageElement = activityEntry.querySelector('.activity-message');
+      if (messageElement && logKey) {
+        // Toggle expanded class
         messageElement.classList.toggle('expanded');
+        
+        // Update the set of expanded entries
+        if (messageElement.classList.contains('expanded')) {
+          expandedActivityEntries.add(logKey);
+        } else {
+          expandedActivityEntries.delete(logKey);
+        }
       }
     }
   });
