@@ -33,8 +33,11 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.sync.set({
+    visionProvider: 'ollama',
     ollamaUrl: 'http://localhost:11434',
-    checkInterval: 10000, // 3 seconds default (can be set up to 60 seconds)
+    apiKey: '',
+    modelName: 'llava',
+    checkInterval: 10000, // 10 seconds default (can be set up to 60 seconds)
     isEnabled: false
   });
   
@@ -55,7 +58,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'analyzeImage') {
     console.log('[Football Ad Muter Background] Processing image analysis request');
     console.log('[Football Ad Muter Background] Image size:', request.base64Image.length);
-    console.log('[Football Ad Muter Background] Ollama URL:', request.ollamaUrl);
+    console.log('[Football Ad Muter Background] Provider:', request.visionProvider || 'ollama');
     console.log('[Football Ad Muter Background] API Metrics:', apiMetrics);
     
     // Increment request counter
@@ -63,7 +66,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     apiMetrics.lastRequestTime = Date.now();
     
     // Handle async operation properly
-    analyzeWithOllama(request.base64Image, request.ollamaUrl)
+    analyzeWithVisionAPI(request.base64Image, request)
       .then(analysisResult => {
         console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
         
@@ -121,10 +124,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'testApiConnection') {
-    console.log('[Football Ad Muter Background] API connection test requested');
+    console.log('[Football Ad Muter Background] API connection test requested for provider:', request.visionProvider || 'ollama');
     
     // Handle async operation properly
-    testOllamaConnection(request.ollamaUrl)
+    testVisionAPIConnection(request)
       .then(result => {
         console.log('[Football Ad Muter Background] API test complete:', result);
         sendResponse({ result: result, error: null });
@@ -196,6 +199,304 @@ async function testOllamaConnection(ollamaUrl) {
       apiUrl: `${ollamaUrl}/api/tags`
     });
     throw error;
+  }
+}
+
+// Generic vision API testing function
+async function testVisionAPIConnection(config) {
+  const provider = config.visionProvider || 'ollama';
+  
+  switch (provider) {
+    case 'ollama':
+      return await testOllamaConnection(config.ollamaUrl);
+    case 'openai':
+      return await testOpenAIConnection(config.apiKey, config.modelName);
+    case 'google':
+      return await testGoogleConnection(config.apiKey, config.modelName);
+    case 'claude':
+      return await testClaudeConnection(config.apiKey, config.modelName);
+    default:
+      throw new Error(`Unsupported vision provider: ${provider}`);
+  }
+}
+
+// Generic vision analysis function
+async function analyzeWithVisionAPI(base64Image, config) {
+  const provider = config.visionProvider || 'ollama';
+  
+  switch (provider) {
+    case 'ollama':
+      return await analyzeWithOllama(base64Image, config.ollamaUrl);
+    case 'openai':
+      return await analyzeWithOpenAI(base64Image, config.apiKey, config.modelName);
+    case 'google':
+      return await analyzeWithGoogle(base64Image, config.apiKey, config.modelName);
+    case 'claude':
+      return await analyzeWithClaude(base64Image, config.apiKey, config.modelName);
+    default:
+      throw new Error(`Unsupported vision provider: ${provider}`);
+  }
+}
+
+// Test functions for each provider
+async function testOpenAIConnection(apiKey, modelName) {
+  try {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const hasModel = data.data.some(model => model.id === modelName);
+    
+    return {
+      success: true,
+      connected: true,
+      hasRequiredModel: hasModel,
+      message: hasModel ? `Model ${modelName} is available` : `Model ${modelName} not found`
+    };
+  } catch (error) {
+    throw new Error(`OpenAI connection failed: ${error.message}`);
+  }
+}
+
+async function testGoogleConnection(apiKey, modelName) {
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+      method: 'GET'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Google API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const hasModel = data.models && data.models.some(model => model.name.includes(modelName));
+    
+    return {
+      success: true,
+      connected: true,
+      hasRequiredModel: hasModel,
+      message: hasModel ? `Model ${modelName} is available` : `Model ${modelName} not found`
+    };
+  } catch (error) {
+    throw new Error(`Google API connection failed: ${error.message}`);
+  }
+}
+
+async function testClaudeConnection(apiKey, modelName) {
+  try {
+    // Claude doesn't have a models endpoint, so we'll test with a simple request
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: modelName,
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'test' }]
+      })
+    });
+    
+    // A 400 error with model info means the API key works but model might be wrong
+    // A 401 error means bad API key
+    if (response.status === 401) {
+      throw new Error('Invalid API key');
+    }
+    
+    return {
+      success: true,
+      connected: true,
+      hasRequiredModel: true,
+      message: `Claude API connection successful with ${modelName}`
+    };
+  } catch (error) {
+    throw new Error(`Claude API connection failed: ${error.message}`);
+  }
+}
+
+// Analysis functions for each provider
+async function analyzeWithOpenAI(base64Image, apiKey, modelName) {
+  const startTime = Date.now();
+  
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: modelName,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Is this image showing live sports gameplay/broadcast content? Answer only "true" or "false". True = active sports gameplay, athletes in action, sports broadcast. False = commercials, ads, halftime entertainment, non-sports content.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 10,
+        temperature: 0
+      })
+    });
+    
+    const processingTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const result = data.choices[0].message.content.trim().toLowerCase();
+    
+    return {
+      result: result === 'true' ? true : result === 'false' ? false : null,
+      model: modelName,
+      response: data,
+      processingTime: processingTime
+    };
+  } catch (error) {
+    return {
+      result: null,
+      error: error.message,
+      processingTime: Date.now() - startTime
+    };
+  }
+}
+
+async function analyzeWithGoogle(base64Image, apiKey, modelName) {
+  const startTime = Date.now();
+  
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: 'Is this image showing live sports gameplay/broadcast content? Answer only "true" or "false". True = active sports gameplay, athletes in action, sports broadcast. False = commercials, ads, halftime entertainment, non-sports content.'
+              },
+              {
+                inline_data: {
+                  mime_type: 'image/jpeg',
+                  data: base64Image
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: 10,
+          temperature: 0
+        }
+      })
+    });
+    
+    const processingTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      throw new Error(`Google API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const result = data.candidates[0].content.parts[0].text.trim().toLowerCase();
+    
+    return {
+      result: result === 'true' ? true : result === 'false' ? false : null,
+      model: modelName,
+      response: data,
+      processingTime: processingTime
+    };
+  } catch (error) {
+    return {
+      result: null,
+      error: error.message,
+      processingTime: Date.now() - startTime
+    };
+  }
+}
+
+async function analyzeWithClaude(base64Image, apiKey, modelName) {
+  const startTime = Date.now();
+  
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: modelName,
+        max_tokens: 10,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Is this image showing live sports gameplay/broadcast content? Answer only "true" or "false". True = active sports gameplay, athletes in action, sports broadcast. False = commercials, ads, halftime entertainment, non-sports content.'
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: base64Image
+                }
+              }
+            ]
+          }
+        ]
+      })
+    });
+    
+    const processingTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      throw new Error(`Claude API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const result = data.content[0].text.trim().toLowerCase();
+    
+    return {
+      result: result === 'true' ? true : result === 'false' ? false : null,
+      model: modelName,
+      response: data,
+      processingTime: processingTime
+    };
+  } catch (error) {
+    return {
+      result: null,
+      error: error.message,
+      processingTime: Date.now() - startTime
+    };
   }
 }
 

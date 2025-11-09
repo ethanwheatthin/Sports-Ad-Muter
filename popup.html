@@ -3,456 +3,38 @@
 <head>
   <meta charset="UTF-8">
   <title>Football Ad Muter</title>
-  <style>
-    body {
-      width: 400px;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      font-size: 14px;
-      max-height: 600px;
-      overflow-y: auto;
-    }
-    
-    h1 {
-      font-size: 18px;
-      margin: 0 0 16px 0;
-      color: #1a1a1a;
-    }
-    
-    .section {
-      margin-bottom: 16px;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 4px;
-      font-weight: 500;
-      color: #333;
-    }
-    
-    input[type="text"],
-    input[type="number"] {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-      font-size: 14px;
-    }
-    
-    .button-group {
-      display: flex;
-      gap: 8px;
-      margin-top: 16px;
-    }
-    
-    button {
-      flex: 1;
-      padding: 10px;
-      border: none;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-    
-    #startBtn {
-      background-color: #28a745;
-      color: white;
-    }
-    
-    #startBtn:hover {
-      background-color: #218838;
-    }
-    
-    #startBtn:disabled {
-      background-color: #6c757d;
-      cursor: not-allowed;
-    }
-    
-    #stopBtn {
-      background-color: #dc3545;
-      color: white;
-    }
-    
-    #stopBtn:hover {
-      background-color: #c82333;
-    }
-    
-    #stopBtn:disabled {
-      background-color: #6c757d;
-      cursor: not-allowed;
-    }
-    
-    .status {
-      padding: 8px;
-      border-radius: 4px;
-      margin-top: 12px;
-      text-align: center;
-      font-weight: 500;
-    }
-    
-    .status.active {
-      background-color: #d4edda;
-      color: #155724;
-    }
-    
-    .status.inactive {
-      background-color: #f8d7da;
-      color: #721c24;
-    }
-    
-    .info {
-      font-size: 12px;
-      color: #666;
-      margin-top: 4px;
-    }
-    
-    .save-btn {
-      background-color: #007bff;
-      color: white;
-      width: 100%;
-      margin-top: 8px;
-    }
-    
-    .save-btn:hover {
-      background-color: #0056b3;
-    }
-    
-    .test-btn {
-      background-color: #17a2b8;
-      color: white;
-    }
-    
-    .test-btn:hover {
-      background-color: #138496;
-    }
-    
-    .test-btn:disabled {
-      background-color: #6c757d;
-      cursor: not-allowed;
-    }
-    
-    .reset-btn {
-      background-color: #ffc107;
-      color: #212529;
-    }
-    
-    .reset-btn:hover {
-      background-color: #e0a800;
-    }
-    
-    .reset-btn:disabled {
-      background-color: #6c757d;
-      cursor: not-allowed;
-    }
-
-    /* Tiny status buttons for video state */
-    .tiny-status-group {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-      align-items: center;
-    }
-
-    .tiny-btn {
-      padding: 4px 8px;
-      font-size: 11px;
-      border-radius: 12px;
-      border: 1px solid #d0d7de;
-      background: #f4f6f8;
-      color: #333;
-      cursor: default;
-      min-width: 68px;
-      text-align: center;
-    }
-
-    .tiny-btn.active {
-      background: #d4edda;
-      color: #155724;
-      border-color: #c3e6cb;
-    }
-
-    .tiny-btn.inactive {
-      background: #f8d7da;
-      color: #721c24;
-      border-color: #f5c6cb;
-    }
-
-    .tiny-btn.neutral {
-      background: #e9ecef;
-      color: #495057;
-      border-color: #dee2e6;
-    }
-    
-    .connection-status {
-      padding: 8px;
-      border-radius: 4px;
-      margin: 8px 0;
-      text-align: center;
-      font-weight: 500;
-      font-size: 12px;
-    }
-    
-    .connection-status.success {
-      background-color: #d4edda;
-      color: #155724;
-    }
-    
-    .connection-status.error {
-      background-color: #f8d7da;
-      color: #721c24;
-    }
-    
-    .connection-status.testing {
-      background-color: #d1ecf1;
-      color: #0c5460;
-    }
-    
-    .logs-section {
-      margin-top: 20px;
-      border-top: 1px solid #ddd;
-      padding-top: 16px;
-    }
-    
-    .logs-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    
-    .logs-title {
-      font-weight: 600;
-      color: #333;
-      margin: 0;
-    }
-    
-    .clear-logs {
-      background-color: #6c757d;
-      color: white;
-      padding: 4px 8px;
-      font-size: 12px;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-    
-    .clear-logs:hover {
-      background-color: #5a6268;
-    }
-    
-    .logs-container {
-      max-height: 200px;
-      overflow-y: auto;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
-      background-color: #fafafa;
-    }
-    
-    .log-entry {
-      padding: 8px;
-      border-bottom: 1px solid #e8e8e8;
-      font-size: 12px;
-      transition: background-color 0.2s;
-    }
-    
-    .log-entry:hover {
-      background-color: #f0f0f0;
-    }
-    
-    .log-entry:last-child {
-      border-bottom: none;
-    }
-    
-    .log-timestamp {
-      color: #666;
-      font-weight: 500;
-    }
-    
-    .log-result {
-      margin-top: 2px;
-    }
-    
-    .log-gameplay {
-      color: #28a745;
-      font-weight: 500;
-    }
-    
-    .log-ad {
-      color: #dc3545;
-      font-weight: 500;
-    }
-    
-    .log-error {
-      color: #ffc107;
-      font-weight: 500;
-    }
-    
-    .log-action {
-      color: #007bff;
-      font-size: 11px;
-      margin-top: 2px;
-    }
-    
-    .no-logs {
-      padding: 20px;
-      text-align: center;
-      color: #999;
-      font-style: italic;
-    }
-    
-    .llm-response-section {
-      margin-top: 4px;
-    }
-    
-    .llm-toggle {
-      color: #007bff;
-      cursor: pointer;
-      font-size: 11px;
-      text-decoration: underline;
-    }
-    
-    .llm-toggle:hover {
-      color: #0056b3;
-    }
-    
-    .llm-details {
-      background: #f8f9fa;
-      padding: 8px;
-      margin-top: 4px;
-      border-radius: 3px;
-      font-size: 11px;
-      border-left: 3px solid #007bff;
-      line-height: 1.4;
-    }
-    
-    .log-image a {
-      color: #007bff;
-      text-decoration: none;
-      font-size: 11px;
-    }
-    
-    .log-image a:hover {
-      text-decoration: underline;
-    }
-    
-    .log-thumbnail {
-      margin-top: 6px;
-      cursor: pointer;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      overflow: hidden;
-      max-width: 100%;
-    }
-    
-    .log-thumbnail img {
-      width: 100%;
-      height: auto;
-      display: block;
-      transition: transform 0.2s;
-    }
-    
-    .log-thumbnail:hover img {
-      transform: scale(1.02);
-    }
-    
-    .log-thumbnail-caption {
-      font-size: 10px;
-      color: #666;
-      text-align: center;
-      margin-top: 2px;
-      font-style: italic;
-    }
-    
-    .activity-entry {
-      padding: 6px 8px;
-      border-bottom: 1px solid #e8e8e8;
-      font-size: 11px;
-      line-height: 1.4;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-    
-    .activity-entry:hover {
-      background-color: #f5f5f5;
-    }
-    
-    .activity-entry:last-child {
-      border-bottom: none;
-    }
-    
-    .activity-entry .log-thumbnail {
-      margin-top: 6px;
-      cursor: pointer;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      overflow: hidden;
-      max-width: 100%;
-    }
-    
-    .activity-entry .log-thumbnail img {
-      width: 100%;
-      height: auto;
-      display: block;
-      transition: transform 0.2s;
-    }
-    
-    .activity-entry .log-thumbnail:hover img {
-      transform: scale(1.02);
-    }
-    
-    .activity-entry .log-thumbnail-caption {
-      font-size: 10px;
-      color: #666;
-      text-align: center;
-      margin-top: 2px;
-      font-style: italic;
-    }
-    
-    .activity-time {
-      color: #999;
-      font-size: 10px;
-      margin-right: 6px;
-    }
-    
-    .activity-message {
-      color: #333;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    
-    .activity-message.expanded {
-      white-space: normal;
-      word-wrap: break-word;
-    }
-    
-    .activity-info {
-      color: #17a2b8;
-    }
-    
-    .activity-success {
-      color: #28a745;
-    }
-    
-    .activity-warning {
-      color: #ffc107;
-    }
-    
-    .activity-error {
-      color: #dc3545;
-    }
-  </style>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h1>🏈🔇 Sports Ad Muter</h1>
+  <h1>🏈🔇 S.A.M (Sports Ad Muter)</h1>
   
   <div class="section">
+    <label for="visionProvider">Vision Model Provider:</label>
+    <select id="visionProvider">
+      <option value="ollama">Ollama (Local)</option>
+      <option value="openai">OpenAI GPT-4 Vision</option>
+      <option value="google">Google Gemini Vision</option>
+      <option value="claude">Anthropic Claude Vision</option>
+    </select>
+    <div class="info">Choose your preferred vision model provider</div>
+  </div>
+
+  <div class="section" id="ollamaSection">
     <label for="ollamaUrl">Ollama API URL:</label>
     <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
     <div class="info">Default: http://localhost:11434 (Ollama)</div>
+  </div>
+
+  <div class="section" id="apiKeySection" style="display: none;">
+    <label for="apiKey">API Key:</label>
+    <input type="password" id="apiKey" placeholder="Enter your API key">
+    <div class="info" id="apiKeyInfo">Required for cloud-based vision models</div>
+  </div>
+
+  <div class="section" id="modelSection" style="display: none;">
+    <label for="modelName">Model Name:</label>
+    <input type="text" id="modelName" placeholder="Model name">
+    <div class="info" id="modelInfo">Specific model to use for vision analysis</div>
   </div>
   
   <div class="section">
@@ -479,7 +61,10 @@
       <button id="playPauseBtn" class="tiny-btn neutral" title="Play/Pause state">State: —</button>
       <button id="refreshStatusBtn" class="tiny-btn" title="Refresh status">⟳</button>
     </div>
-    <div class="info" style="margin-top:6px;">Shows the audio (muted/unmuted) and play/pause state of the page's active video.</div>
+    <div class="info" style="margin-top:6px;">
+      <div><strong>Monitoring:</strong> <span id="currentTabName" style="font-style: italic; color: #666;">No active tab detected</span></div>
+      <div style="margin-top: 2px;">Shows the audio (muted/unmuted) and play/pause state of the page's active video.</div>
+    </div>
   </div>
   
   <div class="button-group">
@@ -501,15 +86,31 @@
     </div>
   </div>
   
-  <div class="logs-section">
-    <div class="logs-header">
-      <h3 class="logs-title">Activity Log</h3>
-      <button class="clear-logs" id="clearActivityBtn">Clear</button>
+  <details class="logs-section">
+    <summary class="logs-header" style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
+      <h3 class="logs-title">Recent Frame Captures</h3>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="clear-logs" id="clearFramesBtn" onclick="event.stopPropagation();">Clear</button>
+        <span class="expand-indicator">▼</span>
+      </div>
+    </summary>
+    <div id="recentFramesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="no-logs">No frames captured yet. Start monitoring to see captured frames.</div>
     </div>
+  </details>
+  
+  <details class="logs-section">
+    <summary class="logs-header" style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
+      <h3 class="logs-title">Activity Log</h3>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="clear-logs" id="clearActivityBtn" onclick="event.stopPropagation();">Clear</button>
+        <span class="expand-indicator">▼</span>
+      </div>
+    </summary>
     <div class="logs-container" id="activityContainer" style="max-height: 150px;">
       <div class="no-logs">No activity yet. Start monitoring to see live updates.</div>
     </div>
-  </div>
+  </details>
   <script src="popup.js"></script>
 </body>
 </html>
