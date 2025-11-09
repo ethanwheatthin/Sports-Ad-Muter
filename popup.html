@@ -489,6 +489,18 @@
   
   <div class="status inactive" id="status">Inactive</div>
   
+  <!-- Queue and API metrics display -->
+  <div class="section" id="metricsSection" style="display: none;">
+    <label>Queue & API Performance:</label>
+    <div class="info" style="background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 4px; font-size: 11px; line-height: 1.6;">
+      <div><strong>Queue:</strong> <span id="queueLength">0</span> pending, <span id="activeRequests">0</span> active</div>
+      <div><strong>Dropped:</strong> <span id="droppedRequests">0</span> requests</div>
+      <div><strong>API Success:</strong> <span id="apiSuccessRate">0</span>% (<span id="completedRequests">0</span>/<span id="totalRequests">0</span>)</div>
+      <div><strong>Avg Response:</strong> <span id="avgProcessingTime">0</span>ms</div>
+      <div><strong>Sampling:</strong> <span id="currentInterval">0</span>s interval, <span id="samplingMode">normal</span> mode</div>
+    </div>
+  </div>
+  
   <div class="logs-section">
     <div class="logs-header">
       <h3 class="logs-title">Activity Log</h3>
@@ -498,17 +510,6 @@
       <div class="no-logs">No activity yet. Start monitoring to see live updates.</div>
     </div>
   </div>
-  
-  <div class="logs-section">
-    <div class="logs-header">
-      <h3 class="logs-title">Analysis Results</h3>
-      <button class="clear-logs" id="clearLogsBtn">Clear</button>
-    </div>
-    <div class="logs-container" id="logsContainer">
-      <div class="no-logs">No analysis results yet. Start monitoring to see results.</div>
-    </div>
-  </div>
-  
   <script src="popup.js"></script>
 </body>
 </html>

@@ -48,7 +48,67 @@ function startLogRefresh() {
     loadActivityLogs();
     // also update the small video status indicators
     updateVideoStatus();
+    // Update queue and API metrics
+    updateMetrics();
   }, 2000);
+}
+
+// Update queue and API metrics display
+function updateMetrics() {
+  if (!isMonitoring) {
+    return;
+  }
+  
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    
+    // Get queue status from content script
+    chrome.tabs.sendMessage(tabs[0].id, { action: 'getQueueStatus' }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        return;
+      }
+      
+      // Update queue metrics
+      if (response.queue) {
+        document.getElementById('queueLength').textContent = response.queue.queueLength || 0;
+        document.getElementById('activeRequests').textContent = response.queue.activeRequests || 0;
+        document.getElementById('droppedRequests').textContent = response.queue.stats.droppedRequests || 0;
+        document.getElementById('completedRequests').textContent = response.queue.stats.completedRequests || 0;
+        document.getElementById('totalRequests').textContent = response.queue.stats.totalRequests || 0;
+        
+        const successRate = response.queue.stats.totalRequests > 0
+          ? Math.round((response.queue.stats.completedRequests / response.queue.stats.totalRequests) * 100)
+          : 0;
+        document.getElementById('apiSuccessRate').textContent = successRate;
+        
+        const avgTime = Math.round(response.queue.stats.averageProcessingTime || 0);
+        document.getElementById('avgProcessingTime').textContent = avgTime;
+      }
+      
+      // Update sampler metrics
+      if (response.sampler) {
+        const intervalSeconds = (response.sampler.currentInterval / 1000).toFixed(1);
+        document.getElementById('currentInterval').textContent = intervalSeconds;
+        
+        let mode = 'normal';
+        if (response.sampler.isAdDetected) {
+          mode = 'ad detected (fast)';
+        } else if (response.sampler.gameplayConfidence >= 3) {
+          mode = 'stable gameplay';
+        }
+        document.getElementById('samplingMode').textContent = mode;
+      }
+    });
+  });
+  
+  // Get API metrics from background script
+  chrome.runtime.sendMessage({ action: 'getApiMetrics' }, (response) => {
+    if (chrome.runtime.lastError || !response || !response.metrics) {
+      return;
+    }
+    
+    // Additional metrics from background could be displayed here if needed
+  });
 }
 
 // Stop refresh when popup closes
@@ -278,17 +338,20 @@ function updateUI() {
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
   const status = document.getElementById('status');
+  const metricsSection = document.getElementById('metricsSection');
   
   if (isMonitoring) {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     status.textContent = 'Monitoring Active';
     status.className = 'status active';
+    metricsSection.style.display = 'block';
   } else {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     status.textContent = 'Inactive';
     status.className = 'status inactive';
+    metricsSection.style.display = 'none';
   }
 }
 
