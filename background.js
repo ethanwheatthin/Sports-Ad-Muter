@@ -169,14 +169,16 @@ Return "true" if the image contains:
 - Studio analysts or commentators
 - Replays with obvious overlay graphics
 - Sideline interviews
+- Pre-game or post-game coverage
+- Crowd shots without gameplay
+- Press conferences
+- Loading screens or channel logos
+- Close up shots of players, coaches, commentators, or anything related to a sporting event
+
 
 Return "false" if the image contains:
 - Commercials or advertisements
 - Halftime shows or entertainment
-- Pre-game or post-game coverage
-- Press conferences
-- Crowd shots without gameplay
-- Loading screens or channel logos
 - Any non-sports content
 - Static graphics or promotional content
 
