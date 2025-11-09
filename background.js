@@ -24,7 +24,7 @@ chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.sync.set({
     ollamaUrl: 'http://localhost:11434',
-    checkInterval: 3000, // 3 seconds default (can be set up to 60 seconds)
+    checkInterval: 10000, // 3 seconds default (can be set up to 60 seconds)
     isEnabled: false
   });
   
@@ -154,7 +154,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl) {
     console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
     const prompt = `You are a specialized image classifier for detecting live sports gameplay.
 
-Your task: Analyze the provided image and determine if it shows ACTIVE SPORTS GAMEPLAY.
+Your task: Analyze the provided image and determine if it shows any element of a broadcast of a sports event
 
 RETURN ONLY: true OR false (lowercase, no other text)
 
@@ -169,14 +169,16 @@ Return "true" if the image contains:
 - Studio analysts or commentators
 - Replays with obvious overlay graphics
 - Sideline interviews
+- Pre-game or post-game coverage
+- Crowd shots without gameplay
+- Press conferences
+- Loading screens or channel logos
+- Close up shots of players, coaches, commentators, or anything related to a sporting event
+
 
 Return "false" if the image contains:
 - Commercials or advertisements
 - Halftime shows or entertainment
-- Pre-game or post-game coverage
-- Press conferences
-- Crowd shots without gameplay
-- Loading screens or channel logos
 - Any non-sports content
 - Static graphics or promotional content
 

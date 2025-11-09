@@ -3,7 +3,7 @@
 let isMonitoring = false;
 let checkInterval = null;
 let ollamaUrl = 'http://localhost:11434';
-let checkIntervalTime = 3000; // 3 seconds default
+let checkIntervalTime = 10000; // 10 seconds default
 
 // Detect streaming service for optimizations
 const currentSite = {
@@ -40,11 +40,98 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) =>
     checkIntervalTime = result.checkInterval;
     console.log('[Football Ad Muter] Check interval set to:', checkIntervalTime, 'ms');
   }
+  
+  // Log that the extension loaded
+  logActivity('🚀 Extension loaded and ready', 'info');
+  
   if (result.isEnabled) {
     console.log('[Football Ad Muter] Auto-starting monitoring from saved state');
     startMonitoring();
   }
 });
+
+// Activity logging function - logs important events to the popup
+function logActivity(message, type = 'info') {
+  const activityEntry = {
+    timestamp: Date.now(),
+    message: message,
+    type: type // 'info', 'success', 'warning', 'error'
+  };
+  
+  chrome.storage.sync.get(['activityLogs'], (storage) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
+      return;
+    }
+    
+    const logs = storage.activityLogs || [];
+    logs.push(activityEntry);
+    
+    // Keep only the last 100 entries
+    const trimmedLogs = logs.slice(-100);
+    
+    chrome.storage.sync.set({ activityLogs: trimmedLogs }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
+        return;
+      }
+      
+      // Notify popup to refresh activity logs if it's open
+      try {
+        chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {
+          // Ignore errors - popup might not be open
+          if (chrome.runtime.lastError) {
+            // This is normal when popup is closed, don't log
+          }
+        });
+      } catch (error) {
+        // Ignore - popup not available
+      }
+    });
+  });
+}
+
+// Activity logging function with image attachment
+function logActivityWithImage(message, type = 'info', imageDataUrl = null) {
+  const activityEntry = {
+    timestamp: Date.now(),
+    message: message,
+    type: type,
+    imageUrl: imageDataUrl
+  };
+  
+  chrome.storage.sync.get(['activityLogs'], (storage) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
+      return;
+    }
+    
+    const logs = storage.activityLogs || [];
+    logs.push(activityEntry);
+    
+    // Keep only the last 100 entries
+    const trimmedLogs = logs.slice(-100);
+    
+    chrome.storage.sync.set({ activityLogs: trimmedLogs }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
+        return;
+      }
+      
+      // Notify popup to refresh activity logs if it's open
+      try {
+        chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {
+          // Ignore errors - popup might not be open
+          if (chrome.runtime.lastError) {
+            // This is normal when popup is closed, don't log
+          }
+        });
+      } catch (error) {
+        // Ignore - popup not available
+      }
+    });
+  });
+}
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -79,6 +166,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Football Ad Muter] Reset video command received');
     resetVideoPlayer();
     sendResponse({ status: 'reset' });
+  } else if (request.action === 'getVideoStatus') {
+    // Return basic status about the active video on the page
+    try {
+      const video = getActiveVideo();
+      if (!video) {
+        sendResponse({ found: false });
+      } else {
+        sendResponse({
+          found: true,
+          muted: !!video.muted,
+          paused: !!video.paused,
+          currentTime: video.currentTime
+        });
+      }
+    } catch (err) {
+      console.error('[Football Ad Muter] Error getting video status:', err);
+      sendResponse({ found: false, error: err?.message || String(err) });
+    }
   }
   return false;
 });
@@ -86,12 +191,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function startMonitoring() {
   if (isMonitoring) {
     console.log('[Football Ad Muter] Monitoring already active, ignoring start request');
+    logActivity('⚠️ Monitoring already active', 'warning');
     return;
   }
   
   isMonitoring = true;
   console.log('[Football Ad Muter] Monitoring started - checking every', checkIntervalTime, 'ms');
   console.log('[Football Ad Muter] Using API URL:', ollamaUrl);
+  logActivity(`✅ Monitoring started (checking every ${checkIntervalTime/1000}s)`, 'success');
   
   // Track the last video we captured to detect video changes
   let lastVideoElement = null;
@@ -106,6 +213,7 @@ function startMonitoring() {
       consecutiveFailures++;
       if (consecutiveFailures > 5) {
         console.log('[Football Ad Muter] ⚠️ No video found for 5 consecutive checks - might need to wait for page load');
+        logActivity('⚠️ No video found for multiple checks', 'warning');
       }
       return;
     }
@@ -116,6 +224,7 @@ function startMonitoring() {
     // Detect if video element changed (e.g., ad vs content switch)
     if (lastVideoElement && lastVideoElement !== video) {
       console.log('[Football Ad Muter] 🔄 Video element changed - different element detected');
+      logActivity('🔄 Video element changed', 'info');
       // Clear the muted flag from old video if it exists
       if (lastVideoElement.dataset.mutedByExtension === 'true') {
         delete lastVideoElement.dataset.mutedByExtension;
@@ -159,6 +268,7 @@ function stopMonitoring() {
     checkInterval = null;
   }
   console.log('[Football Ad Muter] Monitoring stopped');
+  logActivity('⏹️ Monitoring stopped', 'info');
 }
 
 function getActiveVideo() {
@@ -613,6 +723,7 @@ async function performCapture(video) {
     
     if (!captureResult) {
       console.error('[Football Ad Muter] Failed to capture video frame with any method');
+      logActivity('❌ Failed to capture video frame', 'error');
       
       // Check if early in video
       if (video.currentTime < 1 && video.duration > 5) {
@@ -635,6 +746,7 @@ async function performCapture(video) {
     }
     
     console.log('[Football Ad Muter] Successfully captured frame using:', captureResult.method);
+    logActivity(`📸 Frame captured (${captureResult.method})`, 'info');
     console.log('[Football Ad Muter] Converting blob to base64...');
     
     const reader = new FileReader();
@@ -649,6 +761,12 @@ async function performCapture(video) {
         const base64Image = reader.result.split(',')[1];
         console.log('[Football Ad Muter] Image converted to base64, length:', base64Image.length, 'characters');
         console.log('[Football Ad Muter] Sending image to background script for analysis...');
+        
+        // Log the frame capture with the image data
+        logActivityWithImage(`📸 Frame captured (${captureResult.method})`, 'info', reader.result);
+        
+        // Log that we're sending the frame for analysis
+        logActivity('🤖 Analyzing frame with LLM...', 'info');
         
         const response = await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
@@ -681,12 +799,21 @@ async function performCapture(video) {
         
         if (response.error) {
           console.error('[Football Ad Muter] API error from background:', response.error);
+          logActivity(`❌ API Error: ${response.error}`, 'error');
           saveLogEntry(null, `API Error: ${response.error}`, reader.result, response);
           return;
         }
         
         const isGameplay = response.result;
         console.log('[Football Ad Muter] Analysis result:', isGameplay);
+        
+        // Get LLM response text for logging
+        let llmResponseText = '';
+        if (response.response) {
+          llmResponseText = typeof response.response === 'string' 
+            ? response.response 
+            : (response.response?.thinking || JSON.stringify(response.thinking));
+        }
         
         // Log the analysis result
         let action = null;
@@ -695,6 +822,7 @@ async function performCapture(video) {
           // Mute the video
           if (!video.muted) {
             console.log('[Football Ad Muter] 🔇 MUTING VIDEO - Advertisement detected');
+            logActivity(`🔇 MUTING - Advertisement detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'warning');
             video.muted = true;
             video.dataset.mutedByExtension = 'true';
             action = `Video muted (advertisement detected) - Method: ${captureResult.method}`;
@@ -705,14 +833,17 @@ async function performCapture(video) {
           // Unmute if we muted it
           if (video.dataset.mutedByExtension === 'true') {
             console.log('[Football Ad Muter] 🔊 UNMUTING VIDEO - Gameplay detected');
+            logActivity(`🔊 UNMUTING - Gameplay detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'success');
             video.muted = false;
             delete video.dataset.mutedByExtension;
             action = `Video unmuted (gameplay detected) - Method: ${captureResult.method}`;
           } else {
             console.log('[Football Ad Muter] Gameplay detected, video not muted by extension');
+            logActivity(`✓ Gameplay confirmed${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'info');
           }
         } else {
           console.log('[Football Ad Muter] Analysis returned null/undefined - no action taken');
+          logActivity('⚠️ Analysis inconclusive', 'warning');
         }
         
         // Save log entry with image data and full LLM response
@@ -786,6 +917,7 @@ function resetVideoPlayer() {
   
   // Log the reset action
   saveLogEntry(null, `Video player reset - ${videos.length} video(s) processed`);
+  logActivity(`🔄 Video player reset (${videos.length} video(s))`, 'success');
   console.log('[Football Ad Muter] Video player reset complete');
 }
 
