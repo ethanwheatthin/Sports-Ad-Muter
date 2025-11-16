@@ -10,32 +10,9 @@
 </body>
   
   <div class="section">
-    <label for="visionProvider">Vision Model Provider:</label>
-    <select id="visionProvider">
-      <option value="ollama">Ollama (Local)</option>
-      <option value="openai">OpenAI GPT-4 Vision</option>
-      <option value="google">Google Gemini Vision</option>
-      <option value="claude">Anthropic Claude Vision</option>
-    </select>
-    <div class="info">Choose your preferred vision model provider</div>
-  </div>
-
-  <div class="section" id="ollamaSection">
     <label for="ollamaUrl">Ollama API URL:</label>
     <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
-    <div class="info">Default: http://localhost:11434 (Ollama)</div>
-  </div>
-
-  <div class="section" id="apiKeySection" style="display: none;">
-    <label for="apiKey">API Key:</label>
-    <input type="password" id="apiKey" placeholder="Enter your API key">
-    <div class="info" id="apiKeyInfo">Required for cloud-based vision models</div>
-  </div>
-
-  <div class="section" id="modelSection" style="display: none;">
-    <label for="modelName">Model Name:</label>
-    <input type="text" id="modelName" placeholder="Model name">
-    <div class="info" id="modelInfo">Specific model to use for vision analysis</div>
+    <div class="info">Default: http://localhost:11434</div>
   </div>
   
   <div class="section">
@@ -64,7 +41,6 @@
     </div>
     <div class="info" style="margin-top:6px;">
       <div><strong>Monitoring:</strong> <span id="currentTabName" style="font-style: italic; color: #666;">No active tab detected</span></div>
-      <div style="margin-top: 2px;">Shows the audio (muted/unmuted) and play/pause state of the page's active video.</div>
     </div>
   </div>
   

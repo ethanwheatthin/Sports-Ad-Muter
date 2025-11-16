@@ -5,11 +5,6 @@ let checkInterval = null;
 let ollamaUrl = 'http://localhost:11434';
 let checkIntervalTime = 10000; // 10 seconds default
 
-// Vision provider settings
-let visionProvider = 'ollama';
-let apiKey = '';
-let modelName = '';
-
 // Initialize request queue and adaptive sampler
 let requestQueue = null;
 let adaptiveSampler = null;
@@ -56,24 +51,8 @@ console.log('[Football Ad Muter] Detected site:', {
 });
 
 // Load settings from storage
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'visionProvider', 'apiKey', 'modelName'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) => {
   console.log('[Football Ad Muter] Loading settings from storage:', result);
-  
-  // Load vision provider settings
-  if (result.visionProvider) {
-    visionProvider = result.visionProvider;
-    console.log('[Football Ad Muter] Vision provider set to:', visionProvider);
-  }
-  
-  if (result.apiKey) {
-    apiKey = result.apiKey;
-    console.log('[Football Ad Muter] API key loaded for provider:', visionProvider);
-  }
-  
-  if (result.modelName) {
-    modelName = result.modelName;
-    console.log('[Football Ad Muter] Model name set to:', modelName);
-  }
   
   if (result.ollamaUrl) {
     ollamaUrl = result.ollamaUrl;
@@ -200,17 +179,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ status: 'stopped' });
   } else if (request.action === 'updateSettings') {
     console.log('[Football Ad Muter] Settings update received:', {
-      newVisionProvider: request.visionProvider,
       newOllamaUrl: request.ollamaUrl,
-      newModelName: request.modelName,
-      newCheckInterval: request.checkInterval,
-      hasApiKey: !!request.apiKey
+      newCheckInterval: request.checkInterval
     });
     
     // Update all settings
-    visionProvider = request.visionProvider || visionProvider;
-    apiKey = request.apiKey || apiKey;
-    modelName = request.modelName || modelName;
     ollamaUrl = request.ollamaUrl || ollamaUrl;
     checkIntervalTime = request.checkInterval || checkIntervalTime;
     
@@ -903,10 +876,7 @@ async function performCapture(video) {
               chrome.runtime.sendMessage({
                 action: 'analyzeImage',
                 base64Image: data.base64Image,
-                visionProvider: visionProvider,
-                ollamaUrl: ollamaUrl,
-                apiKey: apiKey,
-                modelName: modelName
+                ollamaUrl: ollamaUrl
               }, (response) => {
                 clearTimeout(timeout);
                 
