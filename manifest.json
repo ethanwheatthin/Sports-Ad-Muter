@@ -1,19 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Football Ad Muter",
+  "name": "S.A.M (Sports Ad Muter)",
   "version": "1.0.0",
-  "description": "Automatically mutes ads during football streams by detecting active gameplay",
+  "description": "Automatically mutes ads during live sports streams by detecting active gameplay",
   "permissions": [
     "activeTab",
     "storage",
     "scripting"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "http://localhost:*/*",
-    "https://localhost:*/*",
-    "http://127.0.0.1:*/*",
-    "https://127.0.0.1:*/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
