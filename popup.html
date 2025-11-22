@@ -42,6 +42,18 @@
       <div><strong>Monitoring:</strong> <span id="currentTabName" style="font-style: italic; color: #666;">No active tab detected</span></div>
     </div>
   </div>
+
+  <!-- DRM Protection Status -->
+  <div class="section" id="drmStatusSection" style="display: none;">
+    <div id="drmAlert" class="drm-alert drm-protected">
+      <div class="drm-alert-header">
+        <div class="drm-alert-title">🔒 DRM Protected Content</div>
+        <button id="closeDrmBtn" class="drm-alert-close" title="Close alert">✕</button>
+      </div>
+      <div class="drm-alert-message">This video is protected by Digital Rights Management (DRM). Content analysis cannot be performed on encrypted streams.</div>
+      <div id="drmDetails" class="drm-alert-details"></div>
+    </div>
+  </div>
   
   <div class="button-group">
     <button id="startBtn">Start Monitoring</button>

@@ -20,6 +20,46 @@ function setCurrentTabName() {
   }
 }
 
+// Display DRM protection status
+function displayDrmStatus(drmStatus) {
+  const drmSection = document.getElementById('drmStatusSection');
+  const drmDetails = document.getElementById('drmDetails');
+  
+  if (!drmSection || !drmDetails) return;
+  
+  // Show the DRM section
+  drmSection.style.display = 'block';
+  
+  // Format the key system name for display
+  let keySystemDisplay = 'Unknown';
+  if (drmStatus.keySystem) {
+    const keySystemMap = {
+      'com.widevine.alpha': 'Widevine (Google)',
+      'com.microsoft.playready': 'PlayReady (Microsoft)',
+      'com.apple.fps': 'FairPlay (Apple)',
+      'org.w3.clearkey': 'ClearKey',
+      'mediaKeys': 'Media Keys',
+      'source-type': 'Encrypted Source'
+    };
+    keySystemDisplay = keySystemMap[drmStatus.keySystem] || drmStatus.keySystem;
+  }
+  
+  // Display detection details
+  const detectionTime = new Date(drmStatus.detectedAt).toLocaleTimeString();
+  drmDetails.innerHTML = `
+    <div><strong>Protection Type:</strong> ${keySystemDisplay}</div>
+    <div><strong>Detected at:</strong> ${detectionTime}</div>
+  `;
+  
+  // Reset monitoring state when DRM is detected
+  isMonitoring = false;
+  chrome.storage.sync.set({ isEnabled: false });
+  updateUI();
+  
+  console.log('[Football Ad Muter Popup] DRM status displayed:', drmStatus);
+  console.log('[Football Ad Muter Popup] Monitoring state reset to inactive');
+}
+
 // Run on popup load
 document.addEventListener('DOMContentLoaded', setCurrentTabName);
 // Popup script
@@ -34,7 +74,7 @@ const expandedLLMResponses = new Set();
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
   
   // Set existing settings
@@ -45,6 +85,11 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLog
   document.getElementById('checkInterval').value = intervalMs / 1000;
   isMonitoring = result.isEnabled || false;
   console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring);
+  
+  // Check and display DRM status if present
+  if (result.drmStatus && result.drmStatus.isDrm) {
+    displayDrmStatus(result.drmStatus);
+  }
   
   updateUI();
   loadActivityLogs();
@@ -86,6 +131,12 @@ function startLogRefresh() {
     updateVideoStatus();
     // Update queue and API metrics
     updateMetrics();
+    // Check for DRM status changes
+    chrome.storage.sync.get(['drmStatus'], (result) => {
+      if (result.drmStatus && result.drmStatus.isDrm) {
+        displayDrmStatus(result.drmStatus);
+      }
+    });
   }, 2000);
 }
 
@@ -212,6 +263,10 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 // Start monitoring
 document.getElementById('startBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Start button clicked');
+  // Clear DRM status when starting fresh
+  chrome.storage.sync.set({ drmStatus: null });
+  document.getElementById('drmStatusSection').style.display = 'none';
+  
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs[0]) {
       console.log('[Football Ad Muter Popup] Sending start command to tab:', tabs[0].id);
@@ -254,6 +309,9 @@ document.getElementById('stopBtn').addEventListener('click', () => {
         if (response && response.status === 'stopped') {
           isMonitoring = false;
           chrome.storage.sync.set({ isEnabled: false });
+          // Clear DRM status when monitoring stops
+          chrome.storage.sync.set({ drmStatus: null });
+          document.getElementById('drmStatusSection').style.display = 'none';
           updateUI();
           console.log('[Football Ad Muter Popup] Monitoring stopped successfully');
         }
@@ -360,6 +418,10 @@ document.getElementById('resetVideoBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Reset video button clicked');
   const resetBtn = document.getElementById('resetVideoBtn');
   const statusDiv = document.getElementById('connectionStatus');
+  
+  // Hide DRM alert when resetting
+  document.getElementById('drmStatusSection').style.display = 'none';
+  chrome.storage.sync.set({ drmStatus: null });
   
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs[0]) {
@@ -481,6 +543,16 @@ document.addEventListener('DOMContentLoaded', () => {
       // provide a small visual feedback by briefly toggling neutral style
       refreshBtn.classList.add('active');
       setTimeout(() => refreshBtn.classList.remove('active'), 250);
+    });
+  }
+  
+  // Wire close button for DRM alert
+  const closeDrmBtn = document.getElementById('closeDrmBtn');
+  if (closeDrmBtn) {
+    closeDrmBtn.addEventListener('click', () => {
+      console.log('[Football Ad Muter Popup] Close DRM alert button clicked');
+      document.getElementById('drmStatusSection').style.display = 'none';
+      chrome.storage.sync.set({ drmStatus: null });
     });
   }
 });

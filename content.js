@@ -38,7 +38,8 @@ const currentSite = {
   isNetflix: window.location.hostname.includes('netflix.com'),
   isHulu: window.location.hostname.includes('hulu.com'),
   isAmazonPrime: window.location.hostname.includes('amazon.com') || window.location.hostname.includes('primevideo.com'),
-  isGeneric: true
+  isGeneric: true,
+  isDrmProtected: false // Track if current content has DRM protection
 };
 
 console.log('[Football Ad Muter] Detected site:', {
@@ -258,6 +259,7 @@ function startMonitoring() {
   // Track the last video we captured to detect video changes
   let lastVideoElement = null;
   let consecutiveFailures = 0;
+  let drmCheckPerformed = false;
   
   checkInterval = setInterval(() => {
     console.log('[Football Ad Muter] Running video check...');
@@ -276,6 +278,31 @@ function startMonitoring() {
     // Reset failure counter when we find a video
     consecutiveFailures = 0;
     
+    // Perform DRM check once when we first find a video
+    if (!drmCheckPerformed && video) {
+      console.log('[Football Ad Muter] Running initial DRM protection check...');
+      checkForDrmProtection(video).then(result => {
+        if (result.isDrm) {
+          console.log('[Football Ad Muter] 🔒 DRM PROTECTED CONTENT DETECTED - STOPPING MONITORING');
+          logActivity(`🔒 DRM Protected Content Detected (${result.keySystem}) - Monitoring stopped`, 'error');
+          // Stop monitoring
+          stopMonitoring();
+          drmCheckPerformed = true;
+        } else {
+          console.log('[Football Ad Muter] No DRM protection detected, continuing...');
+          drmCheckPerformed = true;
+        }
+      }).catch(error => {
+        console.error('[Football Ad Muter] Error during DRM check:', error);
+        drmCheckPerformed = true; // Mark as performed even if error, to avoid repeated checks
+      });
+    }
+    
+    // If DRM was detected, stop processing
+    if (currentSite.isDrmProtected) {
+      return;
+    }
+    
     // Detect if video element changed (e.g., ad vs content switch)
     if (lastVideoElement && lastVideoElement !== video) {
       console.log('[Football Ad Muter] 🔄 Video element changed - different element detected');
@@ -286,6 +313,8 @@ function startMonitoring() {
       }
       // Reset sampler when video changes
       adaptiveSampler.reset();
+      // Re-perform DRM check for new video element
+      drmCheckPerformed = false;
     }
     lastVideoElement = video;
     
@@ -528,6 +557,94 @@ function getActiveVideo() {
   
   console.log('[Football Ad Muter] No suitable video found, returning first video');
   return videos[0];
+}
+
+// Function to detect DRM protection on video element
+async function checkForDrmProtection(video) {
+  try {
+    console.log('[Football Ad Muter] Checking for DRM protection...');
+    
+    // Method 1: Check EME (Encrypted Media Extensions)
+    if (navigator.requestMediaKeySystemAccess) {
+      const keySystemsToCheck = [
+        'com.widevine.alpha', // Widevine (Google)
+        'com.microsoft.playready', // PlayReady (Microsoft)
+        'com.apple.fps', // FairPlay (Apple)
+        'org.w3.clearkey' // ClearKey
+      ];
+      
+      for (const keySystem of keySystemsToCheck) {
+        try {
+          const access = await navigator.requestMediaKeySystemAccess(keySystem, [
+            {
+              initDataTypes: ['cenc', 'cbcs', 'sinf', 'webm', 'keyids'],
+              videoCapabilities: [{ contentType: 'video/mp4' }],
+              audioCapabilities: [{ contentType: 'audio/mp4' }]
+            }
+          ]);
+          
+          if (access) {
+            console.log('[Football Ad Muter] 🔒 DRM DETECTED: ' + keySystem);
+            currentSite.isDrmProtected = true;
+            saveDrmStatus(true, keySystem);
+            return { isDrm: true, keySystem: keySystem };
+          }
+        } catch (e) {
+          // This key system is not supported, continue to next
+        }
+      }
+    }
+    
+    // Method 2: Check video element for encrypted content indicators
+    if (video.mediaKeys) {
+      console.log('[Football Ad Muter] 🔒 DRM DETECTED: mediaKeys present on video element');
+      currentSite.isDrmProtected = true;
+      saveDrmStatus(true, 'mediaKeys');
+      return { isDrm: true, keySystem: 'mediaKeys' };
+    }
+    
+    // Method 3: Check for encrypted content type in source elements
+    const sources = video.querySelectorAll('source');
+    for (const source of sources) {
+      const type = source.type || source.getAttribute('type') || '';
+      if (type.includes('encrypted') || type.includes('drm')) {
+        console.log('[Football Ad Muter] 🔒 DRM DETECTED: Source type indicates DRM - ' + type);
+        currentSite.isDrmProtected = true;
+        saveDrmStatus(true, 'source-type');
+        return { isDrm: true, keySystem: 'source-type' };
+      }
+    }
+    
+    console.log('[Football Ad Muter] ✅ No DRM protection detected');
+    currentSite.isDrmProtected = false;
+    saveDrmStatus(false, null);
+    return { isDrm: false, keySystem: null };
+    
+  } catch (error) {
+    console.error('[Football Ad Muter] Error checking DRM protection:', error);
+    // If we can't determine, assume no DRM
+    currentSite.isDrmProtected = false;
+    saveDrmStatus(false, null);
+    return { isDrm: false, keySystem: null };
+  }
+}
+
+// Save DRM status to storage
+function saveDrmStatus(isDrm, keySystem) {
+  const drmStatus = {
+    isDrm: isDrm,
+    keySystem: keySystem,
+    detectedAt: Date.now(),
+    url: window.location.href
+  };
+  
+  chrome.storage.sync.set({ drmStatus: drmStatus }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter] Error saving DRM status:', chrome.runtime.lastError);
+      return;
+    }
+    console.log('[Football Ad Muter] DRM status saved:', drmStatus);
+  });
 }
 
 // Helper function to check if canvas has actual video content
