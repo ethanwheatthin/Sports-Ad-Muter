@@ -21,7 +21,7 @@ Before creating bug reports, please check the existing issues to avoid duplicate
   - Browser version (Chrome/Edge/etc.)
   - Operating System
   - Extension version
-  - Whether using Ollama or Transformers.js mode
+  - Ollama version
 
 ### Suggesting Enhancements
 
@@ -38,7 +38,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 2. **Make your changes** following the code style of the project
 3. **Test your changes** thoroughly:
    - Test on multiple video streaming sites
-   - Verify both Ollama and Transformers.js modes work
+   - Verify Ollama integration works correctly
    - Check that existing functionality isn't broken
 4. **Update documentation** if you're changing functionality
 5. **Write clear commit messages** describing what and why
@@ -123,9 +123,10 @@ Before submitting a PR:
    - ESPN
    - Other sports streaming platforms
 
-2. **Test both modes:**
-   - Ollama API mode (if you have it set up)
-   - Transformers.js browser mode
+2. **Test Ollama integration:**
+   - Verify connection to Ollama API
+   - Test with CORS enabled
+   - Check model responses
 
 3. **Test error conditions:**
    - No video on page
