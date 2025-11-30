@@ -1,8 +1,8 @@
-# Quick Start Guide 🚀
+# Quick Start Guide
 
 Get S.A.M (Sports Ad Muter) running in 5 minutes!
 
-## 🎯 What You Need
+## What You Need
 
 - Chrome browser
 - Ollama installed ([download here](https://ollama.com/))
@@ -10,7 +10,7 @@ Get S.A.M (Sports Ad Muter) running in 5 minutes!
 
 ---
 
-## ⚡ Quick Setup
+## Quick Setup
 
 ### Step 1: Install Ollama Model
 
@@ -60,7 +60,7 @@ OLLAMA_ORIGINS=* ollama serve
 
 ---
 
-## 🏈 Using the Extension
+## Using the Extension
 
 ### Start Monitoring
 
@@ -71,8 +71,8 @@ OLLAMA_ORIGINS=* ollama serve
 3. Click **Start Monitoring**
 
 4. The extension will now:
-   - ✅ Detect when ads play → **Mutes video**
-   - ✅ Detect when game is on → **Unmutes video**
+   - Detect when ads play → **Mutes video**
+   - Detect when game is on → **Unmutes video**
 
 ### Check It's Working
 
@@ -82,14 +82,14 @@ OLLAMA_ORIGINS=* ollama serve
 
 ---
 
-## ⚠️ Platform Compatibility
+## Platform Compatibility
 
-### ✅ Works Great On:
+### Works Great On:
 - **YouTube** - Sports channels, live streams
 - **Fox Sports** - Sports channels
 - **CBS Sports** - Sports channels
 
-### ❌ DRM Protected Content (Won't Work):
+### DRM Protected Content (Won't Work):
 Some platforms use **DRM (Digital Rights Management)** which prevents the extension from capturing video frames:
 
 #### ESPN
@@ -106,7 +106,7 @@ Some platforms use **DRM (Digital Rights Management)** which prevents the extens
 
 1. Start monitoring on a video
 2. If DRM is detected, you'll see:
-   - 🔒 **Red alert** in the popup: "DRM Protected Content Detected"
+   - **Red alert** in the popup: "DRM Protected Content Detected"
    - Extension automatically stops monitoring
    - Details about which DRM system was detected (Widevine, PlayReady, etc.)
 
@@ -114,7 +114,7 @@ Some platforms use **DRM (Digital Rights Management)** which prevents the extens
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Extension Not Detecting Ads/Gameplay?
 
@@ -167,7 +167,7 @@ kill -9 <PID>
 
 ---
 
-## 🎮 Tips for Best Results
+## Tips for Best Results
 
 1. **Start monitoring BEFORE the game starts** - Let it calibrate
 
@@ -183,7 +183,7 @@ kill -9 <PID>
 
 ---
 
-## 📊 What the Extension Does
+## What the Extension Does
 
 1. **Captures video frames** every 10 seconds (adaptive)
 2. **Sends to Ollama** for AI analysis
@@ -195,7 +195,7 @@ All processing is **100% local** - nothing is sent to external servers!
 
 ---
 
-## 🆘 Need More Help?
+## Need More Help?
 
 - Full documentation: See [README.md](README.md)
 - Detailed troubleshooting: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
@@ -203,4 +203,4 @@ All processing is **100% local** - nothing is sent to external servers!
 
 ---
 
-**Ready to watch sports without annoying ads? Click Start Monitoring and enjoy! 🏈**
+**Ready to watch sports without annoying ads? Click Start Monitoring and enjoy!**

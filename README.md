@@ -1,4 +1,4 @@
-# S.A.M (Sports Ad Muter) 🏈
+# S.A.M (Sports Ad Muter)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome)](https://www.google.com/chrome/)
@@ -8,41 +8,41 @@
 
 S.A.M intelligently distinguishes between live sports action and commercials, seamlessly muting ads while keeping you immersed in the game. Supports both local Ollama AI and in-browser Transformers.js models.
 
-> **🚀 New to S.A.M?** Check out the [Quick Start Guide](QUICKSTART.md) for a 5-minute setup!
+> **New to S.A.M?** Check out the [Quick Start Guide](QUICKSTART.md) for a 5-minute setup!
 
 ---
 
-## ✨ Features
+## Features
 
-- **🎯 Smart Ad Detection** - AI vision model identifies gameplay vs. commercials in real-time
-- **🔇 Automatic Muting** - Instantly mutes during ads, unmutes for live action
-- **🤖 Dual AI Modes**:
+- **Smart Ad Detection** - AI vision model identifies gameplay vs. commercials in real-time
+- **Automatic Muting** - Instantly mutes during ads, unmutes for live action
+- **Dual AI Modes**:
   - **Ollama Mode**: Use local `qwen3-vl:2b` model for high accuracy
   - **Browser Mode**: In-browser Transformers.js with `vit-gpt2-image-captioning` (no external dependencies)
-- **📊 Adaptive Sampling** - Intelligently adjusts capture frequency based on content stability
-- **⚡ Rate-Limited Queue** - Prevents API overload with smart request management
-- **🎮 Easy Controls** - Simple start/stop interface in extension popup
-- **🔒 Privacy First** - All processing happens locally, nothing sent to external servers
-- **📱 Multi-Platform** - Works on YouTube, Twitch, ESPN, Peacock, and more
+- **Adaptive Sampling** - Intelligently adjusts capture frequency based on content stability
+- **Rate-Limited Queue** - Prevents API overload with smart request management
+- **Easy Controls** - Simple start/stop interface in extension popup
+- **Privacy First** - All processing happens locally, nothing sent to external servers
+- **Multi-Platform** - Works on YouTube, Twitch, ESPN, Peacock, and more
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- **[Quick Start Guide](QUICKSTART.md)** ⚡ - Get running in 5 minutes!
-- [Prerequisites](#-prerequisites)
-- [Installation](#-installation)
-- [Usage](#-usage)
-- [Architecture](#-architecture)
-- [Configuration](#-configuration)
-- [Troubleshooting](#-troubleshooting)
-- [Development](#-development)
-- [Contributing](#-contributing)
-- [License](#-license)
+- **[Quick Start Guide](QUICKSTART.md)** - Get running in 5 minutes!
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## 🔧 Prerequisites
+## Prerequisites
 
 Choose **ONE** of the following setups:
 
@@ -67,7 +67,7 @@ ollama serve
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### For Users (Chrome Web Store - Coming Soon)
 
@@ -101,7 +101,7 @@ ollama serve
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Using Ollama Mode
 
@@ -133,7 +133,7 @@ ollama serve
 
 ---
 
-## 📖 Usage
+## Usage
 
 ### Basic Operation
 
@@ -164,7 +164,7 @@ ollama serve
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Check Interval
 
@@ -189,7 +189,7 @@ Automatically adjusts based on detected content:
 
 ---
 
-## 🏛️ Architecture
+## Architecture
 
 ### System Components
 
@@ -257,7 +257,7 @@ Video Frame → Canvas → Base64 → [Queue] → AI Model → true/false
 
 ---
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Extension Not Working
 
@@ -337,7 +337,7 @@ ollama list
 
 Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 
-**❌ DRM Protected (Extension Cannot Work)**:
+**DRM Protected (Extension Cannot Work)**:
 - Netflix
 - Disney+
 - Amazon Prime Video (most content)
@@ -345,7 +345,7 @@ Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 - **Peacock** - Most NBC Sports and live events
 - HBO Max
 
-**✅ Usually Works**:
+**Usually Works**:
 - YouTube (all content)
 - Twitch (most streams)
 - ESPN (some replays and highlights)
@@ -354,7 +354,7 @@ Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 
 **How It Works**: 
 - S.A.M automatically detects DRM protection when you start monitoring
-- If DRM is found, the extension shows a 🔒 alert and stops automatically
+- If DRM is found, the extension shows an alert and stops automatically
 - The alert tells you which DRM system was detected (Widevine, PlayReady, etc.)
 
 **Why DRM Blocks This**: DRM prevents JavaScript from accessing video frames to protect copyrighted content. This is a browser security feature that cannot be bypassed.
@@ -389,7 +389,7 @@ Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 
 ---
 
-## 🛠️ Development
+## Development
 
 ### Setup Development Environment
 
@@ -455,15 +455,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! We appreciate:
 
-- 🐛 Bug reports and fixes
-- ✨ New features and enhancements
-- 📝 Documentation improvements
-- 🧪 Test coverage additions
-- 💡 Architecture suggestions
+- Bug reports and fixes
+- New features and enhancements
+- Documentation improvements
+- Test coverage additions
+- Architecture suggestions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -483,13 +483,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Ollama** - Local AI model runtime
 - **Hugging Face** - Transformers.js and vision models
@@ -498,11 +498,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📞 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/ethanwheatthin/Football-Ad-Muter/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/ethanwheatthin/Football-Ad-Muter/discussions)
 
 ---
 
-**Made with 🏈 by sports fans, for sports fans**
+**Made by sports fans, for sports fans**

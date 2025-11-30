@@ -164,4 +164,4 @@ Feel free to open an issue with your question or reach out to the maintainers.
 
 ## Recognition
 
-Contributors will be recognized in the README and release notes. Thank you for making Football Ad Muter better! 🏈
+Contributors will be recognized in the README and release notes. Thank you for making Football Ad Muter better!
