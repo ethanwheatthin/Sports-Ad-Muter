@@ -19,17 +19,6 @@ These files are useful for development but should not be in the main branch for 
 ### 2. Documentation Files Analysis
 
 #### Files to Consolidate/Remove
-
-**Internal Development Guides** (Can be removed or moved to wiki):
-- `FIX-403-ERROR.md` - Specific debugging guide
-- `PEACOCK-QUICK-FIX.md` - Site-specific fix
-- `PEACOCK-TROUBLESHOOTING.md` - Site-specific troubleshooting
-- `VIDEO-CAPTURE-FIXES.md` - Historical fix notes
-- `IMPROVEMENTS-SUMMARY.md` - Internal development notes
-- `ollama-cors-setup.md` - Ollama setup (merged into README)
-- `QUEUEING-QUICKSTART.md` - Architecture notes (merged into README)
-- `API-QUEUEING-GUIDE.md` - Architecture notes (merged into README)
-
 **Keep**:
 - `TROUBLESHOOTING.md` - Can be merged into README or kept as separate comprehensive troubleshooting guide
 - `.github/copilot-instructions.md` - Helpful for AI-assisted development

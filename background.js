@@ -1,5 +1,37 @@
 // Background service worker
 
+// Default AI prompt
+const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Live sports broadcast content:
+• Active gameplay/competition
+• Athletes in action on field/court
+• Sports venue with players
+• Game action (running, passing, shooting, etc.)
+• Scoreboard during play
+• Sports broadcast angles
+• Studio analysts/commentators
+• Replays with graphics
+• Sideline interviews
+• Pre/post-game coverage
+• Crowd shots
+• Press conferences
+• Player/coach closeups
+• Sports-related content
+
+FALSE = Everything else:
+• Commercials/ads
+• Halftime entertainment  
+• Non-sports content
+• Static graphics/promos
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`;
+
 // Keep service worker alive
 let keepAliveInterval;
 
@@ -35,7 +67,8 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.set({
     ollamaUrl: 'http://localhost:11434',
     checkInterval: 10000, // 10 seconds default (can be set up to 60 seconds)
-    isEnabled: false
+    isEnabled: false,
+    customPrompt: DEFAULT_PROMPT
   });
   
   console.log('[Football Ad Muter Background] Extension installed');
@@ -61,9 +94,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     apiMetrics.totalRequests++;
     apiMetrics.lastRequestTime = Date.now();
     
-    // Handle async operation properly
-    analyzeWithOllama(request.base64Image, request.ollamaUrl)
-      .then(analysisResult => {
+    // Get custom prompt from storage, or use default
+    chrome.storage.sync.get(['customPrompt'], (storage) => {
+      const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
+      
+      // Handle async operation properly
+      analyzeWithOllama(request.base64Image, request.ollamaUrl, customPrompt)
+        .then(analysisResult => {
         console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
         
         // Update metrics
@@ -84,11 +121,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Return the full analysis result object (includes result, model, response, processingTime, etc.)
         sendResponse(analysisResult);
       })
-      .catch(error => {
-        console.error('[Football Ad Muter Background] Analysis failed:', error);
-        apiMetrics.failedRequests++;
-        sendResponse({ result: null, error: error.message });
-      });
+        .catch(error => {
+          console.error('[Football Ad Muter Background] Analysis failed:', error);
+          apiMetrics.failedRequests++;
+          sendResponse({ result: null, error: error.message });
+        });
+    });
     
     return true; // Keep the message channel open for async response
   }
@@ -199,41 +237,14 @@ async function testOllamaConnection(ollamaUrl) {
   }
 }
 
-async function analyzeWithOllama(base64Image, ollamaUrl) {
+async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_PROMPT) {
   const startTime = Date.now();
   
   try {
     console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
-    const prompt = `SPORTS BROADCAST DETECTOR - RAPID MODE
-
-INPUT: Image
-OUTPUT: true OR false (only)
-
-TRUE = Live sports broadcast content:
-• Active gameplay/competition
-• Athletes in action on field/court
-• Sports venue with players
-• Game action (running, passing, shooting, etc.)
-• Scoreboard during play
-• Sports broadcast angles
-• Studio analysts/commentators
-• Replays with graphics
-• Sideline interviews
-• Pre/post-game coverage
-• Crowd shots
-• Press conferences
-• Player/coach closeups
-• Sports-related content
-
-FALSE = Everything else:
-• Commercials/ads
-• Halftime entertainment  
-• Non-sports content
-• Static graphics/promos
-
-DECISION RULE: When uncertain → false
-
-RESPOND: true OR false (nothing else)`;
+    console.log('[Football Ad Muter Background] Using custom prompt:', customPrompt.substring(0, 100) + '...');
+    
+    const prompt = customPrompt;
 
     console.log('[Football Ad Muter Background] Making API request to:', `${ollamaUrl}/api/generate`);
     console.log('[Football Ad Muter Background] Request payload size:', {
