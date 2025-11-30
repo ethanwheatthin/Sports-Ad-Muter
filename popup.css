@@ -7,10 +7,45 @@ body {
   overflow-y: auto;
 }
 
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
 h1 {
   font-size: 18px;
-  margin: 0 0 16px 0;
+  margin: 0;
   color: #1a1a1a;
+}
+
+.expand-toggle-btn {
+  background: transparent;
+  border: 1px solid #ddd;
+  color: #666;
+  font-size: 13px;
+  max-width: 25px;
+  height: 25px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.expand-toggle-btn:hover {
+  background: #f0f0f0;
+  border-color: #999;
+  color: #333;
+}
+
+.expand-toggle-btn:active {
+  background: #e0e0e0;
+  transform: scale(0.95);
 }
 
 .section {

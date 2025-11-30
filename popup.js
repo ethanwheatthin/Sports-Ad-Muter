@@ -4,14 +4,24 @@ function setCurrentTabName() {
   if (!tabNameSpan) return;
 
   // Check for Chrome extension API
-  if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs && tabs.length > 0) {
+  if (typeof chrome !== 'undefined' && chrome.tabs) {
+    // Use getTargetTab to show the monitored tab or last active regular tab
+    getTargetTab((tab) => {
+      if (tab) {
         // Prefer tab title, fallback to URL
-        const tab = tabs[0];
-        tabNameSpan.textContent = tab.title || tab.url || 'Unknown tab';
+        const displayText = tab.title || tab.url || 'Unknown tab';
+        tabNameSpan.textContent = displayText;
+        if (monitoredTabId === tab.id) {
+          tabNameSpan.style.color = '#28a745';
+          tabNameSpan.style.fontWeight = 'bold';
+        } else {
+          tabNameSpan.style.color = '#666';
+          tabNameSpan.style.fontWeight = 'italic';
+        }
       } else {
         tabNameSpan.textContent = 'No active tab detected';
+        tabNameSpan.style.color = '#666';
+        tabNameSpan.style.fontWeight = 'normal';
       }
     });
   } else {
@@ -66,11 +76,58 @@ document.addEventListener('DOMContentLoaded', setCurrentTabName);
 
 let isMonitoring = false;
 let refreshInterval = null;
+let monitoredTabId = null;
+let popOutWindowId = null; // Track the pop-out window ID
 
 // Track expanded state of activity and log entries
 const expandedActivityEntries = new Set();
 const expandedLogEntries = new Set();
 const expandedLLMResponses = new Set();
+
+// Helper function to get the target tab for communication
+// Returns the monitored tab if available, otherwise the last active regular tab
+function getTargetTab(callback) {
+  if (monitoredTabId) {
+    // Check if the monitored tab still exists
+    chrome.tabs.get(monitoredTabId, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        console.log('[Football Ad Muter Popup] Monitored tab no longer exists, clearing');
+        monitoredTabId = null;
+        chrome.storage.sync.set({ monitoredTabId: null });
+        // Fall back to finding an active tab
+        findActiveRegularTab(callback);
+      } else {
+        callback(tab);
+      }
+    });
+  } else {
+    findActiveRegularTab(callback);
+  }
+}
+
+function findActiveRegularTab(callback) {
+  // Query for all tabs and find the last active one that's not a chrome:// or extension page
+  chrome.tabs.query({}, (tabs) => {
+    // Filter out chrome://, chrome-extension://, and about: pages
+    const regularTabs = tabs.filter(tab => 
+      tab.url && 
+      !tab.url.startsWith('chrome://') && 
+      !tab.url.startsWith('chrome-extension://') &&
+      !tab.url.startsWith('about:')
+    );
+    
+    // Sort by last accessed time (most recent first)
+    regularTabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+    
+    if (regularTabs.length > 0) {
+      console.log('[Football Ad Muter Popup] Found active regular tab:', regularTabs[0].id, regularTabs[0].url);
+      callback(regularTabs[0]);
+    } else {
+      console.log('[Football Ad Muter Popup] No regular tabs found');
+      callback(null);
+    }
+  });
+}
 
 // Default AI prompt
 const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
@@ -107,7 +164,7 @@ RESPOND: true OR false (nothing else)`;
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt', 'monitoredTabId', 'popOutWindowId'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
   
   // Set existing settings
@@ -121,7 +178,9 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLog
   document.getElementById('customPrompt').value = result.customPrompt || DEFAULT_PROMPT;
   
   isMonitoring = result.isEnabled || false;
-  console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring);
+  monitoredTabId = result.monitoredTabId || null;
+  popOutWindowId = result.popOutWindowId || null;
+  console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring, 'Tab ID:', monitoredTabId, 'Window ID:', popOutWindowId);
   
   // Check and display DRM status if present
   if (result.drmStatus && result.drmStatus.isDrm) {
@@ -179,50 +238,46 @@ function startLogRefresh() {
 
 // Update queue and API metrics display
 function updateMetrics() {
-  if (!isMonitoring) {
+  if (!isMonitoring || !monitoredTabId) {
     return;
   }
   
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]) return;
+  // Get queue status from content script using stored tab ID
+  chrome.tabs.sendMessage(monitoredTabId, { action: 'getQueueStatus' }, (response) => {
+    if (chrome.runtime.lastError || !response) {
+      return;
+    }
     
-    // Get queue status from content script
-    chrome.tabs.sendMessage(tabs[0].id, { action: 'getQueueStatus' }, (response) => {
-      if (chrome.runtime.lastError || !response) {
-        return;
-      }
+    // Update queue metrics
+    if (response.queue) {
+      document.getElementById('queueLength').textContent = response.queue.queueLength || 0;
+      document.getElementById('activeRequests').textContent = response.queue.activeRequests || 0;
+      document.getElementById('droppedRequests').textContent = response.queue.stats.droppedRequests || 0;
+      document.getElementById('completedRequests').textContent = response.queue.stats.completedRequests || 0;
+      document.getElementById('totalRequests').textContent = response.queue.stats.totalRequests || 0;
       
-      // Update queue metrics
-      if (response.queue) {
-        document.getElementById('queueLength').textContent = response.queue.queueLength || 0;
-        document.getElementById('activeRequests').textContent = response.queue.activeRequests || 0;
-        document.getElementById('droppedRequests').textContent = response.queue.stats.droppedRequests || 0;
-        document.getElementById('completedRequests').textContent = response.queue.stats.completedRequests || 0;
-        document.getElementById('totalRequests').textContent = response.queue.stats.totalRequests || 0;
-        
-        const successRate = response.queue.stats.totalRequests > 0
-          ? Math.round((response.queue.stats.completedRequests / response.queue.stats.totalRequests) * 100)
-          : 0;
-        document.getElementById('apiSuccessRate').textContent = successRate;
-        
-        const avgTime = Math.round(response.queue.stats.averageProcessingTime || 0);
-        document.getElementById('avgProcessingTime').textContent = avgTime;
-      }
+      const successRate = response.queue.stats.totalRequests > 0
+        ? Math.round((response.queue.stats.completedRequests / response.queue.stats.totalRequests) * 100)
+        : 0;
+      document.getElementById('apiSuccessRate').textContent = successRate;
       
-      // Update sampler metrics
-      if (response.sampler) {
-        const intervalSeconds = (response.sampler.currentInterval / 1000).toFixed(1);
-        document.getElementById('currentInterval').textContent = intervalSeconds;
-        
-        let mode = 'normal';
-        if (response.sampler.isAdDetected) {
-          mode = 'ad detected (fast)';
-        } else if (response.sampler.gameplayConfidence >= 3) {
-          mode = 'stable gameplay';
-        }
-        document.getElementById('samplingMode').textContent = mode;
+      const avgTime = Math.round(response.queue.stats.averageProcessingTime || 0);
+      document.getElementById('avgProcessingTime').textContent = avgTime;
+    }
+    
+    // Update sampler metrics
+    if (response.sampler) {
+      const intervalSeconds = (response.sampler.currentInterval / 1000).toFixed(1);
+      document.getElementById('currentInterval').textContent = intervalSeconds;
+      
+      let mode = 'normal';
+      if (response.sampler.isAdDetected) {
+        mode = 'ad detected (fast)';
+      } else if (response.sampler.gameplayConfidence >= 3) {
+        mode = 'stable gameplay';
       }
-    });
+      document.getElementById('samplingMode').textContent = mode;
+    }
   });
   
   // Get API metrics from background script
@@ -277,10 +332,10 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   
   chrome.storage.sync.set(settings, () => {
     // Update content script with new settings
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        console.log('[Football Ad Muter Popup] Sending settings update to content script');
-        chrome.tabs.sendMessage(tabs[0].id, {
+    getTargetTab((tab) => {
+      if (tab) {
+        console.log('[Football Ad Muter Popup] Sending settings update to content script on tab:', tab.id);
+        chrome.tabs.sendMessage(tab.id, {
           action: 'updateSettings',
           ...settings
         }, (response) => {
@@ -291,7 +346,7 @@ document.getElementById('saveBtn').addEventListener('click', () => {
           }
         });
       } else {
-        console.log('[Football Ad Muter Popup] No active tab found for settings update');
+        console.log('[Football Ad Muter Popup] No suitable tab found for settings update');
       }
     });
     
@@ -320,10 +375,10 @@ document.getElementById('startBtn').addEventListener('click', () => {
   chrome.storage.sync.set({ drmStatus: null });
   document.getElementById('drmStatusSection').style.display = 'none';
   
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      console.log('[Football Ad Muter Popup] Sending start command to tab:', tabs[0].id);
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'start' }, (response) => {
+  getTargetTab((tab) => {
+    if (tab) {
+      console.log('[Football Ad Muter Popup] Sending start command to tab:', tab.id);
+      chrome.tabs.sendMessage(tab.id, { action: 'start' }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('[Football Ad Muter Popup] Error starting monitoring:', chrome.runtime.lastError);
           alert('Error: Cannot start monitoring. Make sure you are on a webpage with video content.');
@@ -332,13 +387,15 @@ document.getElementById('startBtn').addEventListener('click', () => {
         console.log('[Football Ad Muter Popup] Start response:', response);
         if (response && response.status === 'started') {
           isMonitoring = true;
-          chrome.storage.sync.set({ isEnabled: true });
+          monitoredTabId = tab.id;
+          chrome.storage.sync.set({ isEnabled: true, monitoredTabId: tab.id });
           updateUI();
-          console.log('[Football Ad Muter Popup] Monitoring started successfully');
+          console.log('[Football Ad Muter Popup] Monitoring started successfully on tab:', tab.id);
         }
       });
     } else {
-      console.error('[Football Ad Muter Popup] No active tab found for start command');
+      console.error('[Football Ad Muter Popup] No suitable tab found for start command');
+      alert('Error: Cannot find a webpage to monitor. Please navigate to a page with video content.');
     }
   });
 });
@@ -346,22 +403,24 @@ document.getElementById('startBtn').addEventListener('click', () => {
 // Stop monitoring
 document.getElementById('stopBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Stop button clicked');
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      console.log('[Football Ad Muter Popup] Sending stop command to tab:', tabs[0].id);
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'stop' }, (response) => {
+  getTargetTab((tab) => {
+    if (tab) {
+      console.log('[Football Ad Muter Popup] Sending stop command to tab:', tab.id);
+      chrome.tabs.sendMessage(tab.id, { action: 'stop' }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('[Football Ad Muter Popup] Error stopping monitoring:', chrome.runtime.lastError);
           // Still update UI since the error might mean content script isn't running anyway
           isMonitoring = false;
-          chrome.storage.sync.set({ isEnabled: false });
+          monitoredTabId = null;
+          chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
           updateUI();
           return;
         }
         console.log('[Football Ad Muter Popup] Stop response:', response);
         if (response && response.status === 'stopped') {
           isMonitoring = false;
-          chrome.storage.sync.set({ isEnabled: false });
+          monitoredTabId = null;
+          chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
           // Clear DRM status when monitoring stops
           chrome.storage.sync.set({ drmStatus: null });
           document.getElementById('drmStatusSection').style.display = 'none';
@@ -370,7 +429,12 @@ document.getElementById('stopBtn').addEventListener('click', () => {
         }
       });
     } else {
-      console.error('[Football Ad Muter Popup] No active tab found for stop command');
+      console.error('[Football Ad Muter Popup] No suitable tab found for stop command');
+      // Still clear the monitoring state
+      isMonitoring = false;
+      monitoredTabId = null;
+      chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
+      updateUI();
     }
   });
 });
@@ -487,10 +551,10 @@ if (resetVideoBtn) {
     document.getElementById('drmStatusSection').style.display = 'none';
     chrome.storage.sync.set({ drmStatus: null });
     
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        console.log('[Football Ad Muter Popup] Sending reset command to tab:', tabs[0].id);
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'resetVideo' }, (response) => {
+    getTargetTab((tab) => {
+      if (tab) {
+        console.log('[Football Ad Muter Popup] Sending reset command to tab:', tab.id);
+        chrome.tabs.sendMessage(tab.id, { action: 'resetVideo' }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('[Football Ad Muter Popup] Error resetting video:', chrome.runtime.lastError);
             statusDiv.style.display = 'block';
@@ -509,7 +573,11 @@ if (resetVideoBtn) {
           }
         });
       } else {
-        console.error('[Football Ad Muter Popup] No active tab found for reset command');
+        console.error('[Football Ad Muter Popup] No suitable tab found for reset command');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'connection-status error';
+        statusDiv.textContent = '❌ Cannot find a webpage to reset';
+        setTimeout(() => statusDiv.style.display = 'none', 3000);
       }
     });
   });
@@ -555,15 +623,37 @@ function updateVideoStatus() {
   setTinyButton(audioBtn, 'neutral', 'Audio: —');
   setTinyButton(playBtn, 'neutral', 'State: —');
 
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]) {
+  // If we have a monitored tab, query that one, otherwise query active tab
+  const queryOptions = monitoredTabId 
+    ? {} 
+    : { active: true, currentWindow: true };
+
+  if (monitoredTabId) {
+    // Query the specific monitored tab
+    chrome.tabs.get(monitoredTabId, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        setTinyButton(audioBtn, 'neutral', 'Audio: —');
+        setTinyButton(playBtn, 'neutral', 'State: —');
+        return;
+      }
+      queryVideoStatus(tab.id, audioBtn, playBtn);
+    });
+  } else {
+    // Fall back to active tab query
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) {
       setTinyButton(audioBtn, 'neutral', 'Audio: —');
       setTinyButton(playBtn, 'neutral', 'State: —');
-      return;
-    }
+        return;
+      }
+      queryVideoStatus(tabs[0].id, audioBtn, playBtn);
+    });
+  }
+}
 
-    try {
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'getVideoStatus' }, (response) => {
+function queryVideoStatus(tabId, audioBtn, playBtn) {
+  try {
+    chrome.tabs.sendMessage(tabId, { action: 'getVideoStatus' }, (response) => {
         if (chrome.runtime.lastError) {
           // Content script not available / no video
           setTinyButton(audioBtn, 'neutral', 'Audio: —');
@@ -591,12 +681,11 @@ function updateVideoStatus() {
           setTinyButton(playBtn, 'active', 'Playing');
         }
       });
-    } catch (err) {
-      console.error('[Football Ad Muter Popup] Error requesting video status:', err);
-      setTinyButton(audioBtn, 'neutral', 'Audio: —');
-      setTinyButton(playBtn, 'neutral', 'State: —');
-    }
-  });
+  } catch (err) {
+    console.error('[Football Ad Muter Popup] Error getting video status:', err);
+    setTinyButton(audioBtn, 'neutral', 'Audio: —');
+    setTinyButton(playBtn, 'neutral', 'State: —');
+  }
 }
 
 // Wire refresh button on popup
@@ -620,7 +709,87 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.storage.sync.set({ drmStatus: null });
     });
   }
+  
+  // Wire pop-out button to toggle between window and popup modes
+  const popOutBtn = document.getElementById('popOutBtn');
+  if (popOutBtn) {
+    // Check if we're in a standalone window (not a popup)
+    chrome.windows.getCurrent((currentWindow) => {
+      const isStandaloneWindow = currentWindow.type === 'popup';
+      
+      // Update button appearance based on context
+      if (isStandaloneWindow) {
+        popOutBtn.textContent = '✕';
+        popOutBtn.title = 'Close window';
+      } else {
+        popOutBtn.textContent = '⧉';
+        popOutBtn.title = 'Open in new window';
+      }
+      
+      popOutBtn.addEventListener('click', () => {
+        console.log('[Football Ad Muter Popup] Pop-out button clicked, current window type:', currentWindow.type);
+        
+        if (isStandaloneWindow) {
+          // We're in a standalone window - close it
+          console.log('[Football Ad Muter Popup] Closing standalone window');
+          chrome.storage.sync.set({ popOutWindowId: null }, () => {
+            window.close();
+          });
+        } else {
+          // We're in the toolbar popup - open/focus standalone window
+          // First check if window already exists
+          if (popOutWindowId) {
+            chrome.windows.get(popOutWindowId, (existingWindow) => {
+              if (chrome.runtime.lastError || !existingWindow) {
+                // Window doesn't exist anymore, create new one
+                createPopOutWindow();
+              } else {
+                // Window exists, focus it
+                console.log('[Football Ad Muter Popup] Focusing existing window:', popOutWindowId);
+                chrome.windows.update(popOutWindowId, { focused: true });
+                window.close(); // Close the popup
+              }
+            });
+          } else {
+            // No existing window, create new one
+            createPopOutWindow();
+          }
+        }
+      });
+    });
+  }
 });
+
+// Helper function to create pop-out window
+function createPopOutWindow() {
+  console.log('[Football Ad Muter Popup] Creating new pop-out window');
+  chrome.windows.create({
+    url: chrome.runtime.getURL('popup.html'),
+    type: 'popup',
+    width: 500,
+    height: 800
+  }, (newWindow) => {
+    if (newWindow) {
+      console.log('[Football Ad Muter Popup] Opened in new window:', newWindow.id);
+      // Store the window ID
+      chrome.storage.sync.set({ popOutWindowId: newWindow.id });
+      popOutWindowId = newWindow.id;
+      
+      // Listen for window close to clean up stored ID
+      chrome.windows.onRemoved.addListener(function windowClosedListener(windowId) {
+        if (windowId === popOutWindowId) {
+          console.log('[Football Ad Muter Popup] Pop-out window closed');
+          chrome.storage.sync.set({ popOutWindowId: null });
+          popOutWindowId = null;
+          chrome.windows.onRemoved.removeListener(windowClosedListener);
+        }
+      });
+      
+      // Close the toolbar popup
+      window.close();
+    }
+  });
+}
 
 // Removed old analysis logs functions - now using displayRecentFrames() instead
 // function loadLogs() {
