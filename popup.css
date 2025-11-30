@@ -954,3 +954,31 @@ button {
     .flex-xl-100 { flex: 1 1 100%; max-width: 100%; }
     .hide-xl { display: none !important; }
   }
+
+/* Custom Prompt Section Styling */
+details[open] summary .expand-indicator {
+  transform: rotate(180deg);
+}
+
+details summary {
+  outline: none;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+textarea#customPrompt {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  line-height: 1.4;
+}
+
+textarea#customPrompt:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+#resetPromptBtn:hover {
+  background: #5a6268 !important;
+}

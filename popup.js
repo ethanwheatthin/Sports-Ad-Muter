@@ -72,9 +72,42 @@ const expandedActivityEntries = new Set();
 const expandedLogEntries = new Set();
 const expandedLLMResponses = new Set();
 
+// Default AI prompt
+const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Live sports broadcast content:
+• Active gameplay/competition
+• Athletes in action on field/court
+• Sports venue with players
+• Game action (running, passing, shooting, etc.)
+• Scoreboard during play
+• Sports broadcast angles
+• Studio analysts/commentators
+• Replays with graphics
+• Sideline interviews
+• Pre/post-game coverage
+• Crowd shots
+• Press conferences
+• Player/coach closeups
+• Sports-related content
+
+FALSE = Everything else:
+• Commercials/ads
+• Halftime entertainment  
+• Non-sports content
+• Medical commercials
+• Food / drink commercials
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`;
+
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
   
   // Set existing settings
@@ -83,6 +116,10 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLog
   // Convert milliseconds to seconds for display
   const intervalMs = result.checkInterval || 10000;
   document.getElementById('checkInterval').value = intervalMs / 1000;
+  
+  // Load custom prompt or use default
+  document.getElementById('customPrompt').value = result.customPrompt || DEFAULT_PROMPT;
+  
   isMonitoring = result.isEnabled || false;
   console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring);
   
@@ -208,6 +245,7 @@ window.addEventListener('unload', () => {
 // Save settings
 document.getElementById('saveBtn').addEventListener('click', () => {
   const ollamaUrl = document.getElementById('ollamaUrl').value;
+  const customPrompt = document.getElementById('customPrompt').value.trim();
   
   // Convert seconds to milliseconds for storage
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
@@ -218,11 +256,18 @@ document.getElementById('saveBtn').addEventListener('click', () => {
     return;
   }
   
+  // Validate prompt is not empty
+  if (!customPrompt) {
+    alert('Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.');
+    return;
+  }
+  
   const checkInterval = checkIntervalSeconds * 1000;
   
   const settings = {
     ollamaUrl: ollamaUrl,
-    checkInterval: checkInterval
+    checkInterval: checkInterval,
+    customPrompt: customPrompt
   };
   
   console.log('[Football Ad Muter Popup] Saving settings:', { 
@@ -258,6 +303,14 @@ document.getElementById('saveBtn').addEventListener('click', () => {
       saveBtn.textContent = originalText;
     }, 1500);
   });
+});
+
+// Reset prompt to default
+document.getElementById('resetPromptBtn').addEventListener('click', () => {
+  if (confirm('Reset the AI prompt to default? This will overwrite your custom prompt.')) {
+    document.getElementById('customPrompt').value = DEFAULT_PROMPT;
+    console.log('[Football Ad Muter Popup] Prompt reset to default');
+  }
 });
 
 // Start monitoring
@@ -334,121 +387,133 @@ document.getElementById('stopBtn').addEventListener('click', () => {
 // });
 
 // Clear activity logs
-document.getElementById('clearActivityBtn').addEventListener('click', () => {
-  console.log('[Football Ad Muter Popup] Clear activity logs button clicked');
-  chrome.storage.sync.set({ activityLogs: [] }, () => {
-    console.log('[Football Ad Muter Popup] Activity logs cleared from storage');
-    // Clear expanded state tracking for activity logs
-    expandedActivityEntries.clear();
-    loadActivityLogs();
+const clearActivityBtn = document.getElementById('clearActivityBtn');
+if (clearActivityBtn) {
+  clearActivityBtn.addEventListener('click', () => {
+    console.log('[Football Ad Muter Popup] Clear activity logs button clicked');
+    chrome.storage.sync.set({ activityLogs: [] }, () => {
+      console.log('[Football Ad Muter Popup] Activity logs cleared from storage');
+      // Clear expanded state tracking for activity logs
+      expandedActivityEntries.clear();
+      loadActivityLogs();
+    });
   });
-});
+}
 
 // Clear recent frames
-document.getElementById('clearFramesBtn').addEventListener('click', () => {
-  console.log('[Football Ad Muter Popup] Clear frames button clicked');
-  chrome.storage.local.set({ analysisLogs: [] }, () => {
-    console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');
-    loadRecentFrames();
+const clearFramesBtn = document.getElementById('clearFramesBtn');
+if (clearFramesBtn) {
+  clearFramesBtn.addEventListener('click', () => {
+    console.log('[Football Ad Muter Popup] Clear frames button clicked');
+    chrome.storage.local.set({ analysisLogs: [] }, () => {
+      console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');
+      loadRecentFrames();
+    });
   });
-});
+}
 
 // Test API connection
-document.getElementById('testApiBtn').addEventListener('click', () => {
-  console.log('[Football Ad Muter Popup] Test API button clicked');
-  const testBtn = document.getElementById('testApiBtn');
-  const statusDiv = document.getElementById('connectionStatus');
-  const ollamaUrl = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
-  
-  // Update UI to show testing state
-  testBtn.disabled = true;
-  testBtn.textContent = 'Testing...';
-  statusDiv.style.display = 'block';
-  statusDiv.className = 'connection-status testing';
-  statusDiv.textContent = 'Testing connection to Ollama API...';
-  
-  console.log('[Football Ad Muter Popup] Sending API test request to background script');
-  
-  // Send test request to background script
-  chrome.runtime.sendMessage({
-    action: 'testApiConnection',
-    ollamaUrl: ollamaUrl
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('[Football Ad Muter Popup] Runtime error during API test:', chrome.runtime.lastError);
-      statusDiv.className = 'connection-status error';
-      statusDiv.textContent = '❌ Extension error: ' + chrome.runtime.lastError.message;
-    } else if (response.error) {
-      console.error('[Football Ad Muter Popup] API test failed:', response.error);
-      statusDiv.className = 'connection-status error';
-      
-      if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
-        statusDiv.textContent = '❌ Cannot connect to Ollama. Make sure it\'s running and CORS is enabled.';
-      } else {
-        statusDiv.textContent = `❌ Connection failed: ${response.error}`;
-      }
-    } else if (response.result) {
-      console.log('[Football Ad Muter Popup] API test successful:', response.result);
-      
-      if (response.result.success) {
-        statusDiv.className = 'connection-status success';
-        statusDiv.textContent = '✅ Connection successful! Ollama is running.';
+const testApiBtn = document.getElementById('testApiBtn');
+if (testApiBtn) {
+  testApiBtn.addEventListener('click', () => {
+    console.log('[Football Ad Muter Popup] Test API button clicked');
+    const testBtn = document.getElementById('testApiBtn');
+    const statusDiv = document.getElementById('connectionStatus');
+    const ollamaUrl = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
+    
+    // Update UI to show testing state
+    testBtn.disabled = true;
+    testBtn.textContent = 'Testing...';
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'connection-status testing';
+    statusDiv.textContent = 'Testing connection to Ollama API...';
+    
+    console.log('[Football Ad Muter Popup] Sending API test request to background script');
+    
+    // Send test request to background script
+    chrome.runtime.sendMessage({
+      action: 'testApiConnection',
+      ollamaUrl: ollamaUrl
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Football Ad Muter Popup] Runtime error during API test:', chrome.runtime.lastError);
+        statusDiv.className = 'connection-status error';
+        statusDiv.textContent = '❌ Extension error: ' + chrome.runtime.lastError.message;
+      } else if (response.error) {
+        console.error('[Football Ad Muter Popup] API test failed:', response.error);
+        statusDiv.className = 'connection-status error';
+        
+        if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
+          statusDiv.textContent = '❌ Cannot connect to Ollama. Make sure it\'s running and CORS is enabled.';
+        } else {
+          statusDiv.textContent = `❌ Connection failed: ${response.error}`;
+        }
+      } else if (response.result) {
+        console.log('[Football Ad Muter Popup] API test successful:', response.result);
+        
+        if (response.result.success) {
+          statusDiv.className = 'connection-status success';
+          statusDiv.textContent = '✅ Connection successful! Ollama is running.';
+        } else {
+          statusDiv.className = 'connection-status error';
+          statusDiv.textContent = response.result.message || '❌ Connection test failed';
+        }
       } else {
         statusDiv.className = 'connection-status error';
-        statusDiv.textContent = response.result.message || '❌ Connection test failed';
+        statusDiv.textContent = '❌ Unexpected response from API test';
       }
-    } else {
-      statusDiv.className = 'connection-status error';
-      statusDiv.textContent = '❌ Unexpected response from API test';
-    }
-    
-    // Reset button state
-    testBtn.disabled = false;
-    testBtn.textContent = 'Test API Connection';
-    
-    // Hide status after 10 seconds
-    setTimeout(() => {
-      statusDiv.style.display = 'none';
-    }, 10000);
+      
+      // Reset button state
+      testBtn.disabled = false;
+      testBtn.textContent = 'Test API Connection';
+      
+      // Hide status after 10 seconds
+      setTimeout(() => {
+        statusDiv.style.display = 'none';
+      }, 10000);
+    });
   });
-});
+}
 
 // Reset video player
-document.getElementById('resetVideoBtn').addEventListener('click', () => {
-  console.log('[Football Ad Muter Popup] Reset video button clicked');
-  const resetBtn = document.getElementById('resetVideoBtn');
-  const statusDiv = document.getElementById('connectionStatus');
-  
-  // Hide DRM alert when resetting
-  document.getElementById('drmStatusSection').style.display = 'none';
-  chrome.storage.sync.set({ drmStatus: null });
-  
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      console.log('[Football Ad Muter Popup] Sending reset command to tab:', tabs[0].id);
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'resetVideo' }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Football Ad Muter Popup] Error resetting video:', chrome.runtime.lastError);
-          statusDiv.style.display = 'block';
-          statusDiv.className = 'connection-status error';
-          statusDiv.textContent = '❌ Cannot reset video. Make sure you are on a webpage with video content.';
-          setTimeout(() => statusDiv.style.display = 'none', 5000);
-          return;
-        }
-        
-        console.log('[Football Ad Muter Popup] Reset response:', response);
-        if (response && response.status === 'reset') {
-          statusDiv.style.display = 'block';
-          statusDiv.className = 'connection-status success';
-          statusDiv.textContent = '✅ Video player reset successfully!';
-          setTimeout(() => statusDiv.style.display = 'none', 3000);
-        }
-      });
-    } else {
-      console.error('[Football Ad Muter Popup] No active tab found for reset command');
-    }
+const resetVideoBtn = document.getElementById('resetVideoBtn');
+if (resetVideoBtn) {
+  resetVideoBtn.addEventListener('click', () => {
+    console.log('[Football Ad Muter Popup] Reset video button clicked');
+    const resetBtn = document.getElementById('resetVideoBtn');
+    const statusDiv = document.getElementById('connectionStatus');
+    
+    // Hide DRM alert when resetting
+    document.getElementById('drmStatusSection').style.display = 'none';
+    chrome.storage.sync.set({ drmStatus: null });
+    
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        console.log('[Football Ad Muter Popup] Sending reset command to tab:', tabs[0].id);
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'resetVideo' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Football Ad Muter Popup] Error resetting video:', chrome.runtime.lastError);
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'connection-status error';
+            statusDiv.textContent = '❌ Cannot reset video. Make sure you are on a webpage with video content.';
+            setTimeout(() => statusDiv.style.display = 'none', 5000);
+            return;
+          }
+          
+          console.log('[Football Ad Muter Popup] Reset response:', response);
+          if (response && response.status === 'reset') {
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'connection-status success';
+            statusDiv.textContent = '✅ Video player reset successfully!';
+            setTimeout(() => statusDiv.style.display = 'none', 3000);
+          }
+        });
+      } else {
+        console.error('[Football Ad Muter Popup] No active tab found for reset command');
+      }
+    });
   });
-});
+}
 
 function updateUI() {
   const startBtn = document.getElementById('startBtn');

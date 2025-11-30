@@ -19,6 +19,21 @@
     <input type="number" id="checkInterval" min="10" max="180" step="0.5" placeholder="10">
     <div class="info">How often to check (10-180 seconds)</div>
   </div>
+
+  <details class="section" style="cursor: pointer;">
+    <summary style="font-weight: bold; padding: 8px 0; user-select: none; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+      <span>⚙️ AI Prompt Customization</span>
+      <span class="expand-indicator" style="transition: transform 0.2s;">▼</span>
+    </summary>
+    <div style="margin-top: 8px;">
+      <label for="customPrompt" style="display: block; margin-bottom: 4px; font-size: 12px;">Custom Prompt:</label>
+      <textarea id="customPrompt" rows="12" style="width: 100%; padding: 8px; font-family: monospace; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Enter custom prompt..."></textarea>
+      <div class="info" style="margin-top: 4px; font-size: 11px;">
+        The prompt tells the AI model how to classify video frames. Use placeholders like {IMAGE} if needed.
+        <button id="resetPromptBtn" style="margin-top: 6px; padding: 4px 8px; font-size: 11px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Reset to Default</button>
+      </div>
+    </div>
+  </details>
   
   <button class="save-btn" id="saveBtn">Save Settings</button>
   
@@ -86,23 +101,8 @@
       <div class="no-logs">No frames captured yet. Start monitoring to see captured frames.</div>
     </div>
   </details>
-  
-  <details class="logs-section">
-    <summary class="logs-header" style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
-      <h3 class="logs-title">Activity Log</h3>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="clear-logs" id="clearActivityBtn" onclick="event.stopPropagation();">Clear</button>
-        <span class="expand-indicator">▼</span>
-      </div>
-    </summary>
-    <div class="logs-container" id="activityContainer" style="max-height: 150px;">
-      <div class="no-logs">No activity yet. Start monitoring to see live updates.</div>
-    </div>
-  </details>
   <div id="donate-section" style="margin-top: 24px; padding: 12px; border-top: 1px solid #ccc; text-align: center; font-size: 14px; background: #fafbfc;">
-    <strong>Support the Developer</strong><br>
-  Venmo: <a href="https://venmo.com/ethan-c" target="_blank" style="font-weight: bold; color: #3d95ce; text-decoration: none;">ethan-c</a><br>
-  PayPal: <a href="https://paypal.me/ethancollins19" target="_blank" style="font-weight: bold; color: #0070ba; text-decoration: none;">ethancollins19</a>
+    <strong>Vibe Coded By: Ethan Collins</strong><br>
   </div>
   <script src="popup.js"></script>
 </body>
