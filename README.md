@@ -69,19 +69,7 @@ ollama serve
    git clone https://github.com/ethanwheatthin/Football-Ad-Muter.git
    cd Football-Ad-Muter
    ```
-
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Build the extension**:
-   ```bash
-   npm run build
-   ```
-   This creates a `dist/` folder with the bundled extension.
-
-4. **Load in Chrome**:
+2. **Load in Chrome**:
    - Open `chrome://extensions/`
    - Enable **Developer mode** (toggle in top-right)
    - Click **Load unpacked**
@@ -367,21 +355,16 @@ Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 
 1. **Clone and install**:
    ```bash
-   git clone https://github.com/ethanwheatthin/Football-Ad-Muter.git
-   cd Football-Ad-Muter
-   npm install
+   git clone https://github.com/ethanwheatthin/Sports-Ad-Muter.git
    ```
-
-2. **Development build with watch mode**:
+2. **Start Ollama**
    ```bash
-   npm run watch
+   cd Sports-Ad-Muter
+   ./start-ollama-with-cors.bat
    ```
-   Auto-rebuilds on file changes
-
-3. **Load unpacked extension** from `dist/` folder in `chrome://extensions/`
+3. **Load unpacked extension** from `Sports-Ad-Muter/` folder in `chrome://extensions/`
 
 ### Project Structure
-
 ```
 Football-Ad-Muter/
 ├── background.js             # Service worker with Ollama integration
