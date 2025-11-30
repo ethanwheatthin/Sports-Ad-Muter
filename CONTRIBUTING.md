@@ -56,42 +56,14 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 1. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/Football-Ad-Muter.git
-   cd Football-Ad-Muter
+   git clone https://github.com/ethanwheatthin/Sports-Ad-Muter.git
+   cd Sports-Ad-Muter
    ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Build the extension:
-   ```bash
-   npm run build
-   ```
-
-4. Load in Chrome:
+2. Load in Chrome:
    - Navigate to `chrome://extensions/`
    - Enable "Developer mode"
    - Click "Load unpacked"
-   - Select the `dist/` folder
-
-### Development Workflow
-
-- **Watch mode** for automatic rebuilds:
-  ```bash
-  npm run watch
-  ```
-
-- **Development build** (faster, includes source maps):
-  ```bash
-  npm run build:dev
-  ```
-
-- **Production build**:
-  ```bash
-  npm run build
-  ```
+   - Select the `Sports-Ad-Muter/` folder
 
 ### Code Structure
 
