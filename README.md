@@ -110,6 +110,8 @@ ollama serve
 
 ## Usage
 
+![S.A.M Extension Interface](doc%20images/overall%20UI.png)
+
 ### Basic Operation
 
 1. **Open Extension Popup** - Click the S.A.M icon in Chrome toolbar
@@ -125,6 +127,14 @@ ollama serve
    - Yellow status = Ad detected (muted)
    - Activity log shows all detection events
 
+   **Gameplay Detected:**
+   
+   ![Gameplay Detected](doc%20images/gameplay%20detected.png)
+   
+   **Ad Detected:**
+   
+   ![Ad Detected](doc%20images/ad%20detected.png)
+
 5. **Stop Monitoring** - Click "Stop Monitoring" when done
 
 ### Advanced Features
@@ -134,6 +144,8 @@ ollama serve
 **Activity Log** - Real-time log of all mute/unmute events
 
 **Queue Metrics** - Monitor API request queue status and performance
+
+![API Queue Statistics](doc%20images/api%20queue%20stats.png)
 
 **Reset Video** - Manually reset video player state if needed
 
