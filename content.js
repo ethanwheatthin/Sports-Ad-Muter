@@ -4,10 +4,26 @@ let isMonitoring = false;
 let checkInterval = null;
 let ollamaUrl = 'http://localhost:11434';
 let checkIntervalTime = 10000; // 10 seconds default
+let currentTabId = null; // Track this tab's ID
 
 // Initialize request queue and adaptive sampler
 let requestQueue = null;
 let adaptiveSampler = null;
+
+// Video locking mechanism
+let lockedVideo = null; // Reference to the locked video element
+let videoLockEnabled = false; // Whether video locking is active
+
+// Get the current tab ID
+if (typeof chrome !== 'undefined' && chrome.runtime) {
+  // Request tab ID from background script
+  chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
+    if (response && response.tabId) {
+      currentTabId = response.tabId;
+      console.log('[Football Ad Muter] Content script initialized in tab:', currentTabId);
+    }
+  });
+}
 
 function initializeQueue() {
   if (!requestQueue) {
@@ -172,12 +188,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   } else if (request.action === 'start') {
     console.log('[Football Ad Muter] Start command received');
-    startMonitoring();
-    sendResponse({ status: 'started' });
+    // Store this tab as the monitored tab
+    if (currentTabId) {
+      chrome.storage.sync.set({ monitoredTabId: currentTabId }, () => {
+        startMonitoring();
+      });
+      sendResponse({ status: 'started' });
+    } else {
+      startMonitoring();
+      sendResponse({ status: 'started' });
+    }
+    return false;
   } else if (request.action === 'stop') {
     console.log('[Football Ad Muter] Stop command received');
     stopMonitoring();
     sendResponse({ status: 'stopped' });
+    return false;
   } else if (request.action === 'updateSettings') {
     console.log('[Football Ad Muter] Settings update received:', {
       newOllamaUrl: request.ollamaUrl,
@@ -199,10 +225,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       startMonitoring();
     }
     sendResponse({ status: 'updated' });
+    return false;
   } else if (request.action === 'resetVideo') {
     console.log('[Football Ad Muter] Reset video command received');
     resetVideoPlayer();
     sendResponse({ status: 'reset' });
+    return false;
   } else if (request.action === 'getVideoStatus') {
     // Return basic status about the active video on the page
     try {
@@ -221,6 +249,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.error('[Football Ad Muter] Error getting video status:', err);
       sendResponse({ found: false, error: err?.message || String(err) });
     }
+    return false;
   } else if (request.action === 'getQueueStatus') {
     // Return queue and sampler status
     try {
@@ -235,6 +264,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.error('[Football Ad Muter] Error getting queue status:', err);
       sendResponse({ error: err?.message || String(err) });
     }
+    return false;
+  } else if (request.action === 'lockVideo') {
+    // Lock to the current video element
+    console.log('[Football Ad Muter] Lock video command received');
+    try {
+      const video = getActiveVideo();
+      if (video) {
+        lockToVideo(video);
+        sendResponse({ status: 'locked', found: true });
+      } else {
+        console.log('[Football Ad Muter] No video found to lock');
+        sendResponse({ status: 'no_video', found: false });
+      }
+    } catch (err) {
+      console.error('[Football Ad Muter] Error locking video:', err);
+      sendResponse({ status: 'error', error: err?.message || String(err) });
+    }
+    return false;
+  } else if (request.action === 'unlockVideo') {
+    // Unlock video and resume normal detection
+    console.log('[Football Ad Muter] Unlock video command received');
+    try {
+      unlockVideo();
+      sendResponse({ status: 'unlocked' });
+    } catch (err) {
+      console.error('[Football Ad Muter] Error unlocking video:', err);
+      sendResponse({ status: 'error', error: err?.message || String(err) });
+    }
+    return false;
+  } else if (request.action === 'getVideoLockStatus') {
+    // Get lock status
+    try {
+      sendResponse({ 
+        locked: videoLockEnabled,
+        videoExists: lockedVideo ? isVideoElementValid(lockedVideo) : false
+      });
+    } catch (err) {
+      console.error('[Football Ad Muter] Error getting lock status:', err);
+      sendResponse({ locked: false, videoExists: false, error: err?.message || String(err) });
+    }
+    return false;
   }
   return false;
 });
@@ -246,24 +316,51 @@ function startMonitoring() {
     return;
   }
   
-  // Initialize queue and sampler
-  initializeQueue();
+  // Verify this is the correct tab to monitor
+  chrome.storage.sync.get(['monitoredTabId'], (result) => {
+    const monitoredTabId = result.monitoredTabId;
+    
+    // Only start if we're in the monitored tab or no tab is set
+    if (monitoredTabId && currentTabId && monitoredTabId !== currentTabId) {
+      console.log('[Football Ad Muter] ⚠️ Not the monitored tab. This tab:', currentTabId, 'Monitored tab:', monitoredTabId);
+      console.log('[Football Ad Muter] Ignoring start command - monitoring is active in another tab');
+      return;
+    }
+    
+    console.log('[Football Ad Muter] ✅ Correct tab - starting monitoring');
+    
+    // Initialize queue and sampler
+    initializeQueue();
   
-  isMonitoring = true;
-  console.log('[Football Ad Muter] Monitoring started - checking every', checkIntervalTime, 'ms');
-  console.log('[Football Ad Muter] Using API URL:', ollamaUrl);
-  console.log('[Football Ad Muter] Queue config:', requestQueue.getStatus());
-  console.log('[Football Ad Muter] Sampler config:', adaptiveSampler.getStatus());
-  logActivity(`✅ Monitoring started (adaptive sampling: ${checkIntervalTime/1000}s base)`, 'success');
+    isMonitoring = true;
+    console.log('[Football Ad Muter] Monitoring started - checking every', checkIntervalTime, 'ms');
+    console.log('[Football Ad Muter] Using API URL:', ollamaUrl);
+    console.log('[Football Ad Muter] Queue config:', requestQueue.getStatus());
+    console.log('[Football Ad Muter] Sampler config:', adaptiveSampler.getStatus());
+    logActivity(`✅ Monitoring started (adaptive sampling: ${checkIntervalTime/1000}s base)`, 'success');
   
-  // Track the last video we captured to detect video changes
-  let lastVideoElement = null;
-  let consecutiveFailures = 0;
-  let drmCheckPerformed = false;
+    // Track the last video we captured to detect video changes
+    let lastVideoElement = null;
+    let consecutiveFailures = 0;
+    let drmCheckPerformed = false;
   
-  checkInterval = setInterval(() => {
+    checkInterval = setInterval(() => {
     console.log('[Football Ad Muter] Running video check...');
-    const video = getActiveVideo();
+    
+    // Use locked video if lock is enabled and video is still valid
+    let video = null;
+    if (videoLockEnabled && lockedVideo) {
+      if (isVideoElementValid(lockedVideo)) {
+        video = lockedVideo;
+        console.log('[Football Ad Muter] 🔒 Using locked video element');
+      } else {
+        console.log('[Football Ad Muter] ⚠️ Locked video is no longer valid, releasing lock');
+        unlockVideo();
+        video = getActiveVideo();
+      }
+    } else {
+      video = getActiveVideo();
+    }
     
     if (!video) {
       console.log('[Football Ad Muter] No video element found');
@@ -356,6 +453,7 @@ function startMonitoring() {
       console.log('[Football Ad Muter] Video just started, waiting for content to load... (currentTime:', video.currentTime.toFixed(3), 's)');
     }
   }, Math.min(checkIntervalTime, 3000)); // Check more frequently than capture for adaptive timing
+  });
 }
 
 function stopMonitoring() {
@@ -379,8 +477,71 @@ function stopMonitoring() {
     console.log('[Football Ad Muter] Adaptive sampler reset');
   }
   
+  // Release video lock when stopping
+  unlockVideo();
+  
   console.log('[Football Ad Muter] Monitoring stopped');
   logActivity('⏹️ Monitoring stopped', 'info');
+}
+
+// Lock to a specific video element
+function lockToVideo(video) {
+  if (!video) return;
+  
+  lockedVideo = video;
+  videoLockEnabled = true;
+  
+  // Mark the video element with a data attribute for debugging
+  video.dataset.lockedByExtension = 'true';
+  
+  console.log('[Football Ad Muter] 🔒 Video locked:', {
+    width: video.videoWidth,
+    height: video.videoHeight,
+    src: (video.src || video.currentSrc || 'no src').substring(0, 100)
+  });
+  
+  logActivity('🔒 Video locked - monitoring continues even when tab is in background', 'success');
+}
+
+// Unlock video and resume normal detection
+function unlockVideo() {
+  if (lockedVideo && lockedVideo.dataset.lockedByExtension) {
+    delete lockedVideo.dataset.lockedByExtension;
+  }
+  
+  lockedVideo = null;
+  videoLockEnabled = false;
+  
+  console.log('[Football Ad Muter] 🔓 Video unlocked');
+}
+
+// Check if a video element is still valid (not removed from DOM)
+function isVideoElementValid(video) {
+  if (!video) return false;
+  
+  // Check if video is still in the DOM
+  if (!document.contains(video)) {
+    console.log('[Football Ad Muter] Video element removed from DOM');
+    return false;
+  }
+  
+  // Check if video still has valid dimensions
+  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    console.log('[Football Ad Muter] Video lost dimensions');
+    return false;
+  }
+  
+  // When video is locked, don't check visibility (tab might be in background)
+  // Only check visibility for non-locked videos
+  if (!videoLockEnabled) {
+    const rect = video.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      console.log('[Football Ad Muter] Video no longer visible');
+      return false;
+    }
+  }
+  
+  return true;
 }
 
 function getActiveVideo() {
