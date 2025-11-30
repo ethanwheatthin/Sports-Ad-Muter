@@ -6,7 +6,7 @@
 
 **Automatically detect and mute advertisements during live sports broadcasts using AI-powered vision models**
 
-S.A.M intelligently distinguishes between live sports action and commercials, seamlessly muting ads while keeping you immersed in the game. Supports both local Ollama AI and in-browser Transformers.js models.
+S.A.M intelligently distinguishes between live sports action and commercials, seamlessly muting ads while keeping you immersed in the game using local Ollama AI.
 
 > **New to S.A.M?** Check out the [Quick Start Guide](QUICKSTART.md) for a 5-minute setup!
 
@@ -16,9 +16,7 @@ S.A.M intelligently distinguishes between live sports action and commercials, se
 
 - **Smart Ad Detection** - AI vision model identifies gameplay vs. commercials in real-time
 - **Automatic Muting** - Instantly mutes during ads, unmutes for live action
-- **Dual AI Modes**:
-  - **Ollama Mode**: Use local `qwen3-vl:2b` model for high accuracy
-  - **Browser Mode**: In-browser Transformers.js with `vit-gpt2-image-captioning` (no external dependencies)
+- **Local AI Processing** - Uses Ollama with `qwen3-vl:2b` model for high accuracy
 - **Adaptive Sampling** - Intelligently adjusts capture frequency based on content stability
 - **Rate-Limited Queue** - Prevents API overload with smart request management
 - **Easy Controls** - Simple start/stop interface in extension popup
@@ -44,10 +42,6 @@ S.A.M intelligently distinguishes between live sports action and commercials, se
 
 ## Prerequisites
 
-Choose **ONE** of the following setups:
-
-### Option A: Ollama Mode (Recommended for Accuracy)
-
 - **Ollama** installed and running locally
 - **qwen3-vl:2b** model downloaded
 
@@ -59,11 +53,6 @@ ollama pull qwen3-vl:2b
 # Start Ollama (usually runs automatically):
 ollama serve
 ```
-
-### Option B: Browser Mode (No External Dependencies)
-
-- **Node.js 18+** and npm (for building only)
-- **Modern browser** with WebGPU support (optional, for better performance)
 
 ---
 
@@ -103,8 +92,6 @@ ollama serve
 
 ## Quick Start
 
-### Using Ollama Mode
-
 1. Ensure Ollama is running with CORS support:
    - **Windows**: Run `start-ollama-with-cors.bat` (included in project)
    - **macOS/Linux**: `OLLAMA_ORIGINS=* ollama serve`
@@ -118,18 +105,6 @@ ollama serve
 5. S.A.M automatically mutes ads and unmutes for gameplay!
 
 > **Note**: The `start-ollama-with-cors.bat` script automatically handles port conflicts and sets the required CORS configuration.
-
-### Using Browser Mode
-
-1. Click the extension icon
-
-2. Click **Load Model** (first time only - downloads ~1GB model)
-
-3. Wait for model to load (progress shown in popup)
-
-4. Navigate to a live sports stream
-
-5. Click **Start Monitoring**
 
 ---
 
@@ -174,7 +149,7 @@ Adjust how often S.A.M analyzes the video:
 - **Range**: 1-60 seconds
 - **Recommendation**: Leave at 10s, adaptive sampler handles optimization
 
-### Ollama Settings (Ollama Mode Only)
+### Ollama Settings
 
 - **API URL**: Default `http://localhost:11434`
 - Change if Ollama runs on different port/machine
@@ -208,7 +183,7 @@ Automatically adjusts based on detected content:
                     ▼
 ┌─────────────────────────────────────────────────────────────┐
 │           background.js (Service Worker)                     │
-│  • Handles AI model inference (Ollama or Transformers.js)   │
+│  • Handles AI model inference (Ollama)                      │
 │  • Manages request queue and rate limiting                  │
 │  • Tracks API performance metrics                           │
 │  • Keeps service worker alive                               │
@@ -224,7 +199,7 @@ Automatically adjusts based on detected content:
 - Adaptive capture timing via `AdaptiveSampler`
 
 **`background.js`** - Service Worker
-- AI model management (Ollama API or Transformers.js)
+- AI model management (Ollama API)
 - Image analysis and content classification
 - Metrics tracking and monitoring
 
@@ -308,19 +283,6 @@ ollama pull qwen3-vl:2b
 ollama list
 ```
 
-### Browser Mode Issues
-
-**Model Won't Load**:
-- Ensure sufficient disk space (~1GB)
-- Check browser console for errors (F12)
-- Try clearing browser cache
-- Verify internet connection for first download
-
-**Slow Inference**:
-- WebGPU not available → Falls back to WASM (slower)
-- Check WebGPU support: `chrome://gpu`
-- Consider using Ollama mode for better performance
-
 ### Video Detection Issues
 
 **No Video Found**:
@@ -363,13 +325,11 @@ Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 
 **High CPU Usage**:
 - Increase check interval to 15-20 seconds
-- Use Browser mode instead of Ollama (lower overhead)
 - Close other resource-intensive tabs
 
 **Memory Usage**:
 - Extension uses ~100-200MB normally
-- Browser mode model uses additional ~1-2GB when loaded
-- Ollama mode uses less browser memory (processing on server)
+- Ollama handles AI processing externally (minimal browser memory impact)
 
 ### Debug Tools
 
@@ -412,21 +372,17 @@ Some platforms use DRM (Digital Rights Management) which prevents frame capture:
 
 ```
 Football-Ad-Muter/
-├── src/                      # Source files (Transformers.js version)
-│   ├── background.js         # Service worker with Transformers.js
-│   ├── content.js            # Content script (dual-mode compatible)
-│   ├── popup.js              # Popup UI
-│   ├── request-queue.js      # Request queue manager
-│   └── adaptive-sampler.js   # Adaptive sampling logic
+├── background.js             # Service worker with Ollama integration
+├── content.js                # Content script for video capture
+├── popup.js                  # Popup UI logic
+├── request-queue.js          # Request queue manager
+├── adaptive-sampler.js       # Adaptive sampling logic
 ├── manifest.json             # Extension manifest (v3)
 ├── popup.html                # Popup UI structure
 ├── popup.css                 # Popup styling
 ├── images/                   # Extension icons
-├── webpack.config.js         # Webpack bundler config
 ├── package.json              # Dependencies and scripts
 └── README.md                 # This file
-
-Note: Root-level .js files are the Ollama-only version
 ```
 
 ### Build Commands
@@ -443,13 +399,13 @@ npm run clean        # Remove dist/ folder
 Before submitting a PR, test:
 
 - [ ] Multiple video platforms (YouTube, Twitch, etc.)
-- [ ] Both Ollama and Browser modes
+- [ ] Ollama integration and connectivity
 - [ ] Start/stop monitoring
 - [ ] Settings changes apply correctly
 - [ ] Frame capture displays in popup
 - [ ] Activity log updates in real-time
 - [ ] Video detection with multiple videos on page
-- [ ] Error handling (no Ollama, model not loaded, etc.)
+- [ ] Error handling (no Ollama, CORS issues, etc.)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
@@ -492,7 +448,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - **Ollama** - Local AI model runtime
-- **Hugging Face** - Transformers.js and vision models
 - **Chrome Extensions Team** - Manifest V3 documentation
 - **Contributors** - Everyone who has contributed to this project
 

@@ -532,7 +532,7 @@ function updateUI() {
     stopBtn.disabled = true;
     status.textContent = 'Inactive';
     status.className = 'status inactive';
-    metricsSection.style.display = 'none';
+    // metricsSection.style.display = 'none';
   }
 }
 
