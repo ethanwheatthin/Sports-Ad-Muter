@@ -85,6 +85,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false; // Synchronous response
   }
   
+  if (request.action === 'getTabId') {
+    // Return the tab ID of the sender
+    if (sender.tab && sender.tab.id) {
+      console.log('[Football Ad Muter Background] Returning tab ID:', sender.tab.id);
+      sendResponse({ tabId: sender.tab.id });
+    } else {
+      console.log('[Football Ad Muter Background] No tab ID available');
+      sendResponse({ tabId: null });
+    }
+    return false; // Synchronous response
+  }
+  
   if (request.action === 'analyzeImage') {
     console.log('[Football Ad Muter Background] Processing image analysis request');
     console.log('[Football Ad Muter Background] Image size:', request.base64Image.length);

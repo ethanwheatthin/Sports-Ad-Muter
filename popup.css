@@ -190,6 +190,21 @@ button {
   cursor: not-allowed;
 }
 
+.lock-btn {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.lock-btn:hover:not(:disabled) {
+  background-color: #5a32a3;
+}
+
+.lock-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 /* Tiny status buttons for video state */
 .tiny-status-group {
   display: flex;

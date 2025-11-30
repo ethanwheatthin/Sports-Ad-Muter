@@ -30,6 +30,14 @@ function setCurrentTabName() {
   }
 }
 
+// Update the monitoring label with lock icon
+function updateMonitoringLabel(showLockIcon) {
+  const monitoringLabel = document.querySelector('#videoStatusSection .info strong');
+  if (monitoringLabel) {
+    monitoringLabel.textContent = showLockIcon ? '🔒 Monitoring:' : 'Monitoring:';
+  }
+}
+
 // Display DRM protection status
 function displayDrmStatus(drmStatus) {
   const drmSection = document.getElementById('drmStatusSection');
@@ -233,7 +241,52 @@ function startLogRefresh() {
         displayDrmStatus(result.drmStatus);
       }
     });
+    // Update video lock status
+    updateVideoLockStatus();
   }, 2000);
+}
+
+// Update video lock UI
+function updateVideoLockUI(locked) {
+  const lockBtn = document.getElementById('lockVideoBtn');
+  const unlockBtn = document.getElementById('unlockVideoBtn');
+  const lockStatus = document.getElementById('videoLockStatus');
+  
+  // Update the monitoring label lock icon
+  updateMonitoringLabel(locked && isMonitoring);
+  
+  if (lockBtn && unlockBtn && lockStatus) {
+    if (locked) {
+      lockBtn.disabled = true;
+      unlockBtn.disabled = false;
+      lockStatus.style.display = 'block';
+    } else {
+      lockBtn.disabled = false;
+      unlockBtn.disabled = true;
+      lockStatus.style.display = 'none';
+    }
+  }
+}
+
+// Check and update video lock status
+function updateVideoLockStatus() {
+  if (!monitoredTabId) return;
+  
+  chrome.tabs.sendMessage(monitoredTabId, { action: 'getVideoLockStatus' }, (response) => {
+    if (chrome.runtime.lastError || !response) {
+      return;
+    }
+    
+    if (response.locked && response.videoExists) {
+      updateVideoLockUI(true);
+    } else if (response.locked && !response.videoExists) {
+      // Video was locked but no longer valid - unlock automatically
+      chrome.tabs.sendMessage(monitoredTabId, { action: 'unlockVideo' });
+      updateVideoLockUI(false);
+    } else {
+      updateVideoLockUI(false);
+    }
+  });
 }
 
 // Update queue and API metrics display
@@ -391,6 +444,31 @@ document.getElementById('startBtn').addEventListener('click', () => {
           chrome.storage.sync.set({ isEnabled: true, monitoredTabId: tab.id });
           updateUI();
           console.log('[Football Ad Muter Popup] Monitoring started successfully on tab:', tab.id);
+          
+          // Automatically lock to the video
+          console.log('[Football Ad Muter Popup] Auto-locking to video...');
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (pingResponse) => {
+              if (chrome.runtime.lastError || !pingResponse || pingResponse.status !== 'pong') {
+                console.error('[Football Ad Muter Popup] Cannot auto-lock: content script not responding');
+                return;
+              }
+              
+              chrome.tabs.sendMessage(tab.id, { action: 'lockVideo' }, (lockResponse) => {
+                if (chrome.runtime.lastError) {
+                  console.error('[Football Ad Muter Popup] Error auto-locking video:', chrome.runtime.lastError);
+                  return;
+                }
+                
+                if (lockResponse && lockResponse.status === 'locked' && lockResponse.found) {
+                  console.log('[Football Ad Muter Popup] Video auto-locked successfully');
+                  updateVideoLockUI(true);
+                } else {
+                  console.log('[Football Ad Muter Popup] No video found to auto-lock');
+                }
+              });
+            });
+          }, 500);
         }
       });
     } else {
@@ -425,6 +503,7 @@ document.getElementById('stopBtn').addEventListener('click', () => {
           chrome.storage.sync.set({ drmStatus: null });
           document.getElementById('drmStatusSection').style.display = 'none';
           updateUI();
+          updateVideoLockUI(false);
           console.log('[Football Ad Muter Popup] Monitoring stopped successfully');
         }
       });
@@ -709,6 +788,108 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.storage.sync.set({ drmStatus: null });
     });
   }
+  
+  // Wire video lock buttons
+  const lockVideoBtn = document.getElementById('lockVideoBtn');
+  const unlockVideoBtn = document.getElementById('unlockVideoBtn');
+  
+  if (lockVideoBtn) {
+    lockVideoBtn.addEventListener('click', () => {
+      console.log('[Football Ad Muter Popup] Lock video button clicked');
+      
+      // Use monitoredTabId directly if monitoring is active
+      const targetTabId = monitoredTabId;
+      
+      if (!targetTabId) {
+        console.error('[Football Ad Muter Popup] No monitored tab - start monitoring first');
+        alert('Please start monitoring first before locking to a video.');
+        return;
+      }
+      
+      // First, ping to verify content script is responsive
+      console.log('[Football Ad Muter Popup] Pinging content script before lock...');
+      chrome.tabs.sendMessage(targetTabId, { action: 'ping' }, (pingResponse) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Football Ad Muter Popup] Content script not responding:', chrome.runtime.lastError);
+          alert('Error: Cannot reach the content script. The tab may have navigated or the page may have reloaded. Try starting monitoring again.');
+          return;
+        }
+        
+        if (!pingResponse || pingResponse.status !== 'pong') {
+          console.error('[Football Ad Muter Popup] Invalid ping response:', pingResponse);
+          alert('Error: Content script responded unexpectedly. Try reloading the page.');
+          return;
+        }
+        
+        // Content script is responsive, proceed with lock
+        console.log('[Football Ad Muter Popup] Content script responsive, sending lock command');
+        chrome.tabs.sendMessage(targetTabId, { action: 'lockVideo' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Football Ad Muter Popup] Error locking video:', chrome.runtime.lastError);
+            alert('Error: Cannot lock video. The content script may not be responding.');
+            return;
+          }
+          
+          if (response && response.status === 'locked' && response.found) {
+            console.log('[Football Ad Muter Popup] Video locked successfully');
+            updateVideoLockUI(true);
+          } else {
+            console.log('[Football Ad Muter Popup] No video found to lock:', response);
+            alert('No video element found. Make sure a video is playing on the page.');
+          }
+        });
+      });
+    });
+  }
+  
+  if (unlockVideoBtn) {
+    unlockVideoBtn.addEventListener('click', () => {
+      console.log('[Football Ad Muter Popup] Unlock video button clicked');
+      
+      // Use monitoredTabId directly if monitoring is active
+      const targetTabId = monitoredTabId;
+      
+      if (!targetTabId) {
+        console.error('[Football Ad Muter Popup] No monitored tab');
+        alert('No monitored tab found.');
+        return;
+      }
+      
+      // First, ping to verify content script is responsive
+      console.log('[Football Ad Muter Popup] Pinging content script before unlock...');
+      chrome.tabs.sendMessage(targetTabId, { action: 'ping' }, (pingResponse) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Football Ad Muter Popup] Content script not responding:', chrome.runtime.lastError);
+          alert('Error: Cannot reach the content script. The tab may have navigated or the page may have reloaded.');
+          return;
+        }
+        
+        if (!pingResponse || pingResponse.status !== 'pong') {
+          console.error('[Football Ad Muter Popup] Invalid ping response:', pingResponse);
+          alert('Error: Content script responded unexpectedly.');
+          return;
+        }
+        
+        // Content script is responsive, proceed with unlock
+        console.log('[Football Ad Muter Popup] Content script responsive, sending unlock command');
+        chrome.tabs.sendMessage(targetTabId, { action: 'unlockVideo' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Football Ad Muter Popup] Error unlocking video:', chrome.runtime.lastError);
+            alert('Error: Cannot unlock video.');
+            return;
+          }
+          
+          if (response && response.status === 'unlocked') {
+            console.log('[Football Ad Muter Popup] Video unlocked successfully');
+            updateVideoLockUI(false);
+          }
+        });
+      });
+    });
+  }
+  
+  // Check video lock status on load
+  updateVideoLockStatus();
   
   // Wire pop-out button to toggle between window and popup modes
   const popOutBtn = document.getElementById('popOutBtn');
