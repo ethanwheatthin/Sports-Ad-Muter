@@ -6,7 +6,7 @@ Get S.A.M (Sports Ad Muter) running in 5 minutes!
 
 - Chrome browser
 - Ollama installed ([download here](https://ollama.com/))
-- The qwen3-vl:2b model
+- The qwen3.5:0.8b model
 
 ---
 
@@ -17,7 +17,7 @@ Get S.A.M (Sports Ad Muter) running in 5 minutes!
 Open a terminal and run:
 
 ```bash
-ollama pull qwen3-vl:2b
+ollama pull qwen3.5:0.8b
 ```
 
 This downloads the AI vision model (~2.5GB). Wait for it to complete.
@@ -123,7 +123,7 @@ Some platforms use **DRM (Digital Rights Management)** which prevents the extens
 ollama list
 ```
 
-You should see `qwen3-vl:2b` in the list.
+You should see `qwen3.5:0.8b` in the list.
 
 **Verify CORS is enabled:**
 - Make sure you started Ollama with `OLLAMA_ORIGINS=*`

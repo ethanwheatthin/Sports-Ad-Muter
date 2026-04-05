@@ -67,31 +67,31 @@ if %errorlevel% equ 0 (
 
 :check_model
 echo.
-echo [3/4] Checking for required model (qwen3-vl:2b)...
+echo [3/4] Checking for required model (qwen3.5:0.8b)...
 
-REM List installed models and check for qwen3-vl:2b
-ollama list | findstr /C:"qwen3-vl:2b" >nul 2>&1
+REM List installed models and check for qwen3.5:0.8b
+ollama list | findstr /C:"qwen3.5:0.8b" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo [OK] Model qwen3-vl:2b is already installed
+    echo [OK] Model qwen3.5:0.8b is already installed
     goto :verify_cors
 ) else (
-    echo [!] Model qwen3-vl:2b is not installed
+    echo [!] Model qwen3.5:0.8b is not installed
     goto :install_model
 )
 
 :install_model
 echo.
-echo Downloading and installing qwen3-vl:2b model...
+echo Downloading and installing qwen3.5:0.8b model...
 echo This may take several minutes depending on your internet connection...
 echo Model size: approximately 1.5 GB
 echo.
 
-ollama pull qwen3-vl:2b
+ollama pull qwen3.5:0.8b
 if %errorlevel% equ 0 (
-    echo [OK] Model qwen3-vl:2b installed successfully
+    echo [OK] Model qwen3.5:0.8b installed successfully
     goto :verify_cors
 ) else (
-    echo [ERROR] Failed to install model qwen3-vl:2b
+    echo [ERROR] Failed to install model qwen3.5:0.8b
     echo Please check your internet connection and try again
     pause
     exit /b 1

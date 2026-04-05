@@ -16,7 +16,7 @@ S.A.M intelligently distinguishes between live sports action and commercials, se
 
 - **Smart Ad Detection** - AI vision model identifies gameplay vs. commercials in real-time
 - **Automatic Muting** - Instantly mutes during ads, unmutes for live action
-- **Local AI Processing** - Uses Ollama with `qwen3-vl:2b` model for high accuracy
+- **Local AI Processing** - Uses Ollama with `qwen3.5:0.8b` model for high accuracy
 - **Adaptive Sampling** - Intelligently adjusts capture frequency based on content stability
 - **Rate-Limited Queue** - Prevents API overload with smart request management
 - **Easy Controls** - Simple start/stop interface in extension popup
@@ -43,12 +43,12 @@ S.A.M intelligently distinguishes between live sports action and commercials, se
 ## Prerequisites
 
 - **Ollama** installed and running locally
-- **qwen3-vl:2b** model downloaded
+- **qwen3.5:0.8b** model downloaded
 
 ```bash
 # Install Ollama from https://ollama.ai
 # Then pull the vision model:
-ollama pull qwen3-vl:2b
+ollama pull qwen3.5:0.8b
 
 # Start Ollama (usually runs automatically):
 ollama serve

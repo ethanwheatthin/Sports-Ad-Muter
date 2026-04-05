@@ -228,7 +228,7 @@ async function testOllamaConnection(ollamaUrl) {
     
     // Check if the required model is available
     const hasRequiredModel = data.models && data.models.some(model => 
-      model.name.includes('qwen3-vl:2b') || model.name.includes('qwen3-vl')
+      model.name.includes('qwen3.5:0.8b') || model.name.includes('qwen3-vl')
     );
     
     return {
@@ -260,7 +260,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
 
     console.log('[Football Ad Muter Background] Making API request to:', `${ollamaUrl}/api/generate`);
     console.log('[Football Ad Muter Background] Request payload size:', {
-      model: 'qwen3-vl:2b',
+      model: 'qwen3.5:0.8b',
       imageLength: base64Image.length,
       stream: false
     });
@@ -278,7 +278,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        model: 'qwen3-vl:2b',
+        model: 'qwen3.5:0.8b',
         prompt: prompt,
         images: [base64Image],
         stream: false
@@ -325,7 +325,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     // Return full response object for logging
     return {
       result: isGameplay,
-      model: data.model || 'qwen3-vl:2b',
+      model: data.model || 'qwen3.5:0.8b',
       response: data,
       processingTime: processingTime
     };
