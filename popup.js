@@ -950,7 +950,8 @@ if (clearActivityBtn) {
 // Clear recent frames
 const clearFramesBtn = document.getElementById('clearFramesBtn');
 if (clearFramesBtn) {
-  clearFramesBtn.addEventListener('click', () => {
+  clearFramesBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     console.log('[Football Ad Muter Popup] Clear frames button clicked');
     chrome.storage.local.set({ analysisLogs: [] }, () => {
       console.log('[Football Ad Muter Popup] Analysis logs cleared from storage');

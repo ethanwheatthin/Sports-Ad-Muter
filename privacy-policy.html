@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy &mdash; S.A.M (Sports Ad Muter)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #1a1a2e;
+      background: #f8fafc;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+    header {
+      border-bottom: 2px solid #10b981;
+      padding-bottom: 20px;
+      margin-bottom: 36px;
+    }
+    header h1 {
+      margin: 0 0 4px;
+      font-size: 26px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    header p {
+      margin: 0;
+      font-size: 13px;
+      color: #64748b;
+    }
+    h2 {
+      font-size: 17px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 36px 0 10px;
+      padding-left: 12px;
+      border-left: 3px solid #10b981;
+    }
+    p, li { color: #334155; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    .highlight {
+      background: #d1fae5;
+      border: 1px solid #6ee7b7;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 24px 0;
+      color: #065f46;
+      font-weight: 500;
+    }
+    a { color: #2563eb; }
+    footer {
+      margin-top: 56px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Privacy Policy</h1>
+      <p>S.A.M &mdash; Sports Ad Muter &nbsp;&bull;&nbsp; Last updated: April 2026</p>
+    </header>
+
+    <div class="highlight">
+      Short version: S.A.M processes everything on your own computer. No data ever leaves your device. We collect nothing.
+    </div>
+
+    <h2>1. Overview</h2>
+    <p>
+      S.A.M (Sports Ad Muter) is a Chrome browser extension that automatically mutes advertisements
+      during live sports streams. It works by capturing frames from the video you are watching and
+      analyzing them using a locally installed AI model (Ollama) running entirely on your own machine.
+    </p>
+
+    <h2>2. Data We Do Not Collect</h2>
+    <p>S.A.M does <strong>not</strong> collect, transmit, store on external servers, or share any of the following:</p>
+    <ul>
+      <li>Video frames or screenshots captured from your browser</li>
+      <li>URLs or titles of pages you visit</li>
+      <li>Personal information of any kind</li>
+      <li>Usage statistics or analytics</li>
+      <li>Crash reports or telemetry</li>
+      <li>Browser history</li>
+    </ul>
+
+    <h2>3. Data Stored Locally</h2>
+    <p>
+      S.A.M stores the following data <strong>only on your own device</strong> using
+      Chrome's built-in storage APIs (<code>chrome.storage.sync</code> and <code>chrome.storage.local</code>):
+    </p>
+    <ul>
+      <li><strong>Extension settings</strong> &mdash; your Ollama API URL, selected AI model, check interval, sport mode, and system prompt. Stored in <code>chrome.storage.sync</code>, which Chrome may sync across your own signed-in devices using your Google Account's encryption.</li>
+      <li><strong>Recent frame captures</strong> &mdash; the last few video frames analyzed, stored temporarily in <code>chrome.storage.local</code> for display in the extension popup. These are never sent anywhere and are cleared when you click "Clear" or reinstall the extension.</li>
+    </ul>
+
+    <h2>4. How Analysis Works</h2>
+    <p>
+      When S.A.M detects a video, it periodically captures a single frame and sends it to
+      <strong>your locally running Ollama instance</strong> (default: <code>http://localhost:11434</code>).
+      This request never leaves your computer. No third-party server, cloud service, or external API
+      is involved. The AI model runs entirely on your own hardware.
+    </p>
+
+    <h2>5. Permissions Explained</h2>
+    <ul>
+      <li><strong>activeTab</strong> &mdash; Required to interact with the video element on the page you are currently viewing.</li>
+      <li><strong>storage</strong> &mdash; Required to save your settings and temporary frame data locally.</li>
+      <li><strong>host_permissions (&lt;all_urls&gt;)</strong> &mdash; Required so the extension can inject its content script on any website where you may be watching a live sports stream (e.g., ESPN, YouTube, Peacock, Paramount+, etc.).</li>
+    </ul>
+
+    <h2>6. Third-Party Services</h2>
+    <p>
+      S.A.M does not integrate with any third-party analytics, advertising, or data collection services.
+      The only external communication is to the Ollama API running on <code>localhost</code>, which is
+      your own machine.
+    </p>
+
+    <h2>7. Children's Privacy</h2>
+    <p>
+      S.A.M does not knowingly collect any information from anyone, including children under the age of 13.
+    </p>
+
+    <h2>8. Changes to This Policy</h2>
+    <p>
+      If this policy changes materially, the updated version will be published at this URL with
+      a revised "Last updated" date. Continued use of the extension constitutes acceptance of the
+      updated policy.
+    </p>
+
+    <h2>9. Contact</h2>
+    <p>
+      Questions about this privacy policy can be directed to the project's
+      <a href="https://github.com/ethanwheatthin/Sports-Ad-Muter/issues" target="_blank" rel="noopener">GitHub Issues page</a>.
+    </p>
+
+    <footer>
+      &copy; 2026 Ethan Collins &mdash; S.A.M (Sports Ad Muter). Released under the MIT License.
+    </footer>
+  </div>
+</body>
+</html>

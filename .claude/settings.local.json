@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(file:*)",
+      "Bash(grep -r \"eval\\\\|Function\\\\\\(\" /c/Users/ethan/OneDrive/Desktop/Projects/Sports-Ad-Muter/*.js)",
+      "Bash(grep -v \"//\")"
+    ]
+  }
+}

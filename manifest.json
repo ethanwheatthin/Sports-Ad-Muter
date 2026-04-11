@@ -5,8 +5,7 @@
   "description": "Automatically mutes ads during live sports streams by detecting active gameplay",
   "permissions": [
     "activeTab",
-    "storage",
-    "scripting"
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"
