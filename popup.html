@@ -2,139 +2,175 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Football Ad Muter</title>
+  <title>S.A.M – Sports Ad Muter</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+
+  <!-- Header -->
   <div class="header-container">
-    <h1>🏈🔇 S.A.M (Sports Ad Muter)</h1>
+    <h1>S.A.M &mdash; Sports Ad Muter</h1>
     <button id="popOutBtn" class="expand-toggle-btn" title="Open in new window">⧉</button>
   </div>
-  
-  <div class="section">
-    <label for="ollamaUrl">Ollama API URL:</label>
-    <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
-    <div class="info">Default: http://localhost:11434</div>
-  </div>
 
-  <div class="section">
-    <label for="ollamaModel">Model:</label>
-    <div style="display: flex; gap: 8px; align-items: center;">
-      <select id="ollamaModel" style="flex: 1;">
-        <option value="">-- Enter URL above and click Refresh --</option>
-      </select>
-      <button id="refreshModelsBtn" class="test-btn" style="white-space: nowrap; padding: 8px 10px;" title="Fetch available models from Ollama">↻ Refresh</button>
-    </div>
-    <div id="modelStatus" class="info" style="margin-top: 4px;"></div>
-  </div>
+  <div class="popup-body">
 
-  <div class="section">
-    <label for="checkInterval">Check Interval (seconds):</label>
-    <input type="number" id="checkInterval" min="10" max="180" step="0.5" placeholder="10">
-    <div class="info">How often to check (10-180 seconds)</div>
-  </div>
+    <!-- Connection Settings -->
+    <div class="section">
+      <div class="section-title">Connection</div>
 
-  <details class="section" style="cursor: pointer;">
-    <summary style="font-weight: bold; padding: 8px 0; user-select: none; list-style: none; display: flex; justify-content: space-between; align-items: center;">
-      <span>⚙️ System Prompt</span>
-      <span class="expand-indicator" style="transition: transform 0.2s;">▼</span>
-    </summary>
-    <div style="margin-top: 8px;">
-      <label for="sportMode" style="display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600;">Sport Mode:</label>
-      <select id="sportMode" style="width: 100%; margin-bottom: 10px;">
-        <option value="general">General / Auto</option>
-        <option value="american">American Sports (NFL, MLB, NBA, NHL)</option>
-        <option value="golf">Golf</option>
-        <option value="esports">Esports</option>
-        <option value="aquatics">Aquatics / Swimming</option>
-        <option value="olympics">Olympics (Multi-Sport)</option>
-        <option value="soccer">Soccer / Football</option>
-        <option value="motorsports">Motorsports (F1, NASCAR, MotoGP)</option>
-        <option value="tennis">Tennis</option>
-        <option value="winter">Winter Sports</option>
-        <option value="custom">Custom (manual edit only)</option>
-      </select>
-      <label for="customPrompt" style="display: block; margin-bottom: 4px; font-size: 12px;">Prompt <span style="color: #888; font-weight: normal;">(auto-filled by Sport Mode, editable)</span>:</label>
-      <textarea id="customPrompt" rows="12" style="width: 100%; padding: 8px; font-family: monospace; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Enter custom prompt..."></textarea>
-      <div class="info" style="margin-top: 4px; font-size: 11px;">
-        Selecting a Sport Mode fills the prompt with sport-specific detection rules. You can still edit manually.
-        <button id="resetPromptBtn" style="margin-top: 6px; padding: 4px 8px; font-size: 11px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Reset to Mode Default</button>
+      <label for="ollamaUrl">Ollama API URL</label>
+      <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
+      <div class="info">Default: http://localhost:11434</div>
+
+      <div style="margin-top: 10px;">
+        <label for="ollamaModel">Model</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select id="ollamaModel" style="flex: 1;">
+            <option value="">— Enter URL above and click Refresh —</option>
+          </select>
+          <button id="refreshModelsBtn" class="test-btn" style="flex-shrink: 0;" title="Fetch available models from Ollama">&#8635; Refresh</button>
+        </div>
+        <div id="modelStatus"></div>
       </div>
     </div>
-  </details>
-  
-  <button class="save-btn" id="saveBtn">Save Settings</button>
-  
-  <div class="section">
-    <div class="button-group">
-      <button id="testApiBtn" class="test-btn">Test API Connection</button>
-      <button id="resetVideoBtn" class="reset-btn">Reset Video Player</button>
-    </div>
-    <div id="connectionStatus" class="connection-status" style="display: none;"></div>
-  </div>
 
-  <!-- Video status: tiny buttons showing audio & play/pause state -->
-  <div class="section" id="videoStatusSection">
-    <label>Video Status:</label>
-    <div class="tiny-status-group">
-      <button id="audioStatusBtn" class="tiny-btn neutral" title="Audio state">Audio: —</button>
-      <button id="playPauseBtn" class="tiny-btn neutral" title="Play/Pause state">State: —</button>
-      <button id="refreshStatusBtn" class="tiny-btn" title="Refresh status">⟳</button>
+    <!-- Sampling -->
+    <div class="section">
+      <div class="section-title">Sampling</div>
+      <label for="checkInterval">Check Interval (seconds)</label>
+      <input type="number" id="checkInterval" min="10" max="180" step="0.5" placeholder="10">
+      <div class="info">How often to capture and analyze a frame (10–180 s)</div>
     </div>
-    <div class="info" style="margin-top:6px;">
-      <div><strong>Monitoring:</strong> <span id="currentTabName" style="font-style: italic; color: #666;">No active tab detected</span></div>
-    </div>
-    <div class="info" style="margin-top: 4px; font-size: 11px; color: #666;">
-      Video is automatically locked when monitoring starts to ensure consistent tracking.
-    </div>
-  </div>
 
-  <!-- DRM Protection Status -->
-  <div class="section" id="drmStatusSection" style="display: none;">
-    <div id="drmAlert" class="drm-alert drm-protected">
-      <div class="drm-alert-header">
-        <div class="drm-alert-title">🔒 DRM Protected Content</div>
-        <button id="closeDrmBtn" class="drm-alert-close" title="Close alert">✕</button>
+    <!-- System Prompt (collapsible) -->
+    <details class="section" style="cursor: pointer;">
+      <summary>
+        <span class="summary-label">&#9881;&#65039; System Prompt</span>
+        <span class="expand-indicator">&#9660;</span>
+      </summary>
+      <div class="details-body">
+        <label for="sportMode" style="margin-top: 8px;">Sport Mode</label>
+        <select id="sportMode" style="margin-bottom: 12px;">
+          <option value="general">General / Auto</option>
+          <option value="american">American Sports (NFL, MLB, NBA, NHL)</option>
+          <option value="golf">Golf</option>
+          <option value="esports">Esports</option>
+          <option value="aquatics">Aquatics / Swimming</option>
+          <option value="olympics">Olympics (Multi-Sport)</option>
+          <option value="soccer">Soccer / Football</option>
+          <option value="motorsports">Motorsports (F1, NASCAR, MotoGP)</option>
+          <option value="tennis">Tennis</option>
+          <option value="winter">Winter Sports</option>
+          <option value="custom">Custom (manual edit only)</option>
+        </select>
+
+        <label for="customPrompt">Prompt <span style="font-weight: 400; color: var(--text-muted);">— auto-filled by Sport Mode, editable</span></label>
+        <textarea id="customPrompt" rows="12" placeholder="Enter custom prompt..."></textarea>
+
+        <div class="info" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 6px;">
+          <span>Selecting a Sport Mode fills the prompt with sport-specific detection rules.</span>
+          <button id="resetPromptBtn">Reset to Default</button>
+        </div>
       </div>
-      <div class="drm-alert-message">This video is protected by Digital Rights Management (DRM). Content analysis cannot be performed on encrypted streams.</div>
-      <div id="drmDetails" class="drm-alert-details"></div>
+    </details>
+
+    <!-- Save -->
+    <button class="save-btn" id="saveBtn">Save Settings</button>
+
+    <!-- API / Video Controls -->
+    <div class="section" style="margin-top: 8px;">
+      <div class="section-title">Controls</div>
+      <div class="button-group">
+        <button id="testApiBtn" class="test-btn">Test API Connection</button>
+        <button id="resetVideoBtn" class="reset-btn">Reset Video Player</button>
+      </div>
+      <div id="connectionStatus" class="connection-status" style="display: none;"></div>
     </div>
-  </div>
-  
-  <div class="button-group">
-    <button id="startBtn">Start Monitoring</button>
-    <button id="stopBtn" disabled>Stop Monitoring</button>
-  </div>
-  
-  <div class="status inactive" id="status">Inactive</div>
-  
-  <!-- Queue and API metrics display -->
-  <div class="section" id="metricsSection" style="display: none;">
-    <label>Queue & API Performance:</label>
-    <div class="info" style="background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 4px; font-size: 11px; line-height: 1.6;">
-      <div><strong>Queue:</strong> <span id="queueLength">0</span> pending, <span id="activeRequests">0</span> active</div>
-      <div><strong>Dropped:</strong> <span id="droppedRequests">0</span> requests</div>
-      <div><strong>API Success:</strong> <span id="apiSuccessRate">0</span>% (<span id="completedRequests">0</span>/<span id="totalRequests">0</span>)</div>
-      <div><strong>Avg Response:</strong> <span id="avgProcessingTime">0</span>ms</div>
-      <div><strong>Sampling:</strong> <span id="currentInterval">0</span>s interval, <span id="samplingMode">normal</span> mode</div>
+
+    <!-- Video Status -->
+    <div class="section" id="videoStatusSection">
+      <div class="section-title">Video Status</div>
+      <div class="tiny-status-group">
+        <button id="audioStatusBtn" class="tiny-btn neutral" title="Audio state">Audio: —</button>
+        <button id="playPauseBtn" class="tiny-btn neutral" title="Play/Pause state">State: —</button>
+        <button id="refreshStatusBtn" class="tiny-btn" title="Refresh status">&#8635;</button>
+      </div>
+      <div class="info" style="margin-top: 8px;">
+        <strong>Monitoring:</strong> <span id="currentTabName" style="font-style: italic; color: var(--text-muted);">No active tab detected</span>
+      </div>
+      <div class="info" style="margin-top: 3px;">Video is automatically locked when monitoring starts.</div>
     </div>
-  </div>
-  
+
+    <!-- DRM Protection -->
+    <div class="section" id="drmStatusSection" style="display: none; padding: 0;">
+      <div id="drmAlert" class="drm-alert drm-protected">
+        <div class="drm-alert-header">
+          <div class="drm-alert-title">&#128274; DRM Protected Content</div>
+          <button id="closeDrmBtn" class="drm-alert-close" title="Close alert">&#10005;</button>
+        </div>
+        <div class="drm-alert-message">This video is protected by Digital Rights Management (DRM). Content analysis cannot be performed on encrypted streams.</div>
+        <div id="drmDetails" class="drm-alert-details"></div>
+      </div>
+    </div>
+
+    <!-- Main Controls -->
+    <div class="button-group main-controls" style="padding: 0; margin-bottom: 8px;">
+      <button id="startBtn">&#9654; Start Monitoring</button>
+      <button id="stopBtn" disabled>&#9632; Stop</button>
+    </div>
+
+    <div class="status inactive" id="status">Inactive</div>
+
+    <!-- Metrics -->
+    <div class="section" id="metricsSection" style="display: none;">
+      <div class="section-title">Performance</div>
+      <div class="metrics-grid">
+        <div class="metric-item">
+          <div class="metric-label">Queue</div>
+          <div class="metric-value"><span id="queueLength">0</span> <span style="font-size:11px; font-weight:400; color:var(--text-muted);">pending</span></div>
+          <div class="metric-sub"><span id="activeRequests">0</span> active</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">Dropped</div>
+          <div class="metric-value"><span id="droppedRequests">0</span></div>
+          <div class="metric-sub">requests</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">API Success</div>
+          <div class="metric-value"><span id="apiSuccessRate">0</span>%</div>
+          <div class="metric-sub"><span id="completedRequests">0</span> / <span id="totalRequests">0</span></div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">Avg Response</div>
+          <div class="metric-value"><span id="avgProcessingTime">0</span> <span style="font-size:11px; font-weight:400; color:var(--text-muted);">ms</span></div>
+          <div class="metric-sub"><span id="currentInterval">0</span>s · <span id="samplingMode">normal</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /popup-body -->
+
+  <!-- Frame Captures (outside padding wrapper for full-width feel) -->
   <details class="logs-section">
-    <summary class="logs-header" style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
-      <h3 class="logs-title">Recent Frame Captures</h3>
-      <div style="display: flex; align-items: center; gap: 8px;">
+    <summary>
+      <div class="logs-header">
+        <h3 class="logs-title">Recent Frame Captures</h3>
+      </div>
+      <div class="logs-controls">
         <button class="clear-logs" id="clearFramesBtn" onclick="event.stopPropagation();">Clear</button>
-        <span class="expand-indicator">▼</span>
+        <span class="expand-indicator">&#9660;</span>
       </div>
     </summary>
-    <div id="recentFramesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px;">
+    <div id="recentFramesContainer">
       <div class="no-logs">No frames captured yet. Start monitoring to see captured frames.</div>
     </div>
   </details>
-  <div id="donate-section" style="margin-top: 24px; padding: 12px; border-top: 1px solid #ccc; text-align: center; font-size: 14px; background: #fafbfc;">
-    <strong>Vibe Coded By: Ethan Collins</strong><br>
+
+  <div id="donate-section">
+    <strong>Vibe Coded By Ethan Collins</strong>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
