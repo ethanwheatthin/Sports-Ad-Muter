@@ -68,7 +68,9 @@ chrome.runtime.onInstalled.addListener(() => {
     ollamaUrl: 'http://localhost:11434',
     checkInterval: 10000, // 10 seconds default (can be set up to 60 seconds)
     isEnabled: false,
-    customPrompt: DEFAULT_PROMPT
+    customPrompt: DEFAULT_PROMPT,
+    ollamaModel: 'qwen3.5:0.8b',
+    sportMode: 'general'
   });
   
   console.log('[Football Ad Muter Background] Extension installed');
@@ -106,12 +108,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     apiMetrics.totalRequests++;
     apiMetrics.lastRequestTime = Date.now();
     
-    // Get custom prompt from storage, or use default
-    chrome.storage.sync.get(['customPrompt'], (storage) => {
+    // Get custom prompt and model from storage, or use defaults
+    chrome.storage.sync.get(['customPrompt', 'ollamaModel'], (storage) => {
       const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
-      
+      const ollamaModel = storage.ollamaModel || 'qwen3.5:0.8b';
+
       // Handle async operation properly
-      analyzeWithOllama(request.base64Image, request.ollamaUrl, customPrompt)
+      analyzeWithOllama(request.base64Image, request.ollamaUrl, customPrompt, ollamaModel)
         .then(analysisResult => {
         console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
         
@@ -226,16 +229,12 @@ async function testOllamaConnection(ollamaUrl) {
     const data = await response.json();
     console.log('[Football Ad Muter Background] API test response:', data);
     
-    // Check if the required model is available
-    const hasRequiredModel = data.models && data.models.some(model => 
-      model.name.includes('qwen3.5:0.8b') || model.name.includes('qwen3-vl')
-    );
-    
+    const availableModels = data.models ? data.models.map(m => m.name) : [];
+
     return {
       success: true,
       connected: true,
-      hasRequiredModel: hasRequiredModel,
-      availableModels: data.models ? data.models.map(m => m.name) : []
+      availableModels: availableModels
     };
     
   } catch (error) {
@@ -249,18 +248,19 @@ async function testOllamaConnection(ollamaUrl) {
   }
 }
 
-async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_PROMPT) {
+async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_PROMPT, ollamaModel = 'qwen3.5:0.8b') {
   const startTime = Date.now();
-  
+
   try {
     console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
+    console.log('[Football Ad Muter Background] Using model:', ollamaModel);
     console.log('[Football Ad Muter Background] Using custom prompt:', customPrompt.substring(0, 100) + '...');
-    
+
     const prompt = customPrompt;
 
     console.log('[Football Ad Muter Background] Making API request to:', `${ollamaUrl}/api/generate`);
     console.log('[Football Ad Muter Background] Request payload size:', {
-      model: 'qwen3.5:0.8b',
+      model: ollamaModel,
       imageLength: base64Image.length,
       stream: false
     });
@@ -278,7 +278,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        model: 'qwen3.5:0.8b',
+        model: ollamaModel,
         prompt: prompt,
         images: [base64Image],
         stream: false
@@ -325,7 +325,7 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     // Return full response object for logging
     return {
       result: isGameplay,
-      model: data.model || 'qwen3.5:0.8b',
+      model: data.model || ollamaModel,
       response: data,
       processingTime: processingTime
     };

@@ -137,53 +137,413 @@ function findActiveRegularTab(callback) {
   });
 }
 
-// Default AI prompt
-const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
+// Sport mode prompts
+const SPORT_MODE_PROMPTS = {
+  general: `SPORTS BROADCAST DETECTOR - RAPID MODE
 
 INPUT: Image
 OUTPUT: true OR false (only)
 
 TRUE = Live sports broadcast content:
-• Active gameplay/competition
-• Athletes in action on field/court
-• Sports venue with players
-• Game action (running, passing, shooting, etc.)
-• Scoreboard during play
-• Sports broadcast angles
+• Active gameplay/competition (any sport)
+• Athletes in action on field/court/course/track/pool/ice
+• Sports venue with players or competitors
+• Scoreboard, score overlay, or timing display
 • Studio analysts/commentators
 • Replays with graphics
-• Sideline interviews
+• Sideline/courtside/poolside interviews
 • Pre/post-game coverage
-• Crowd shots
+• Crowd in sports venue
 • Press conferences
-• Player/coach closeups
-• Sports-related content
+• Player/coach/athlete closeups
+• Award or medal ceremonies
+• Sports-related news or analysis
 
 FALSE = Everything else:
 • Commercials/ads
-• Halftime entertainment  
+• Halftime/intermission entertainment
 • Non-sports content
-• Medical commercials
-• Food / drink commercials
+• Product commercials of any kind
 
 DECISION RULE: When uncertain → false
 
-RESPOND: true OR false (nothing else)`;
+RESPOND: true OR false (nothing else)`,
+
+  american: `AMERICAN SPORTS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = American sports broadcast content:
+• Football field with players (NFL/college/arena)
+• Baseball diamond — pitcher, batter, fielders
+• Basketball court with players
+• Hockey rink with skaters, puck, sticks
+• Team uniforms, helmets, jerseys, pads
+• Scoreboard or score overlay
+• Coaches and players on sideline/bench/dugout
+• Studio analysts at desk
+• Replays with graphics or telestrator
+• Crowd in stadium or arena
+• Press conferences and interviews
+• Draft, trade, or signing coverage
+• Stat overlays and graphics
+• Pregame/postgame shows
+
+FALSE = Everything else:
+• Commercials and ads
+• Halftime entertainment performances
+• Non-sports content
+• Product commercials of any kind
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  golf: `GOLF BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Golf broadcast content:
+• Golfer swinging club (full swing, chip, pitch, putt)
+• Green fairways, tee boxes, or putting greens
+• Golf ball in flight, rolling, or on course
+• Caddie carrying bag or advising player
+• Gallery/spectators watching quietly
+• Leaderboard showing player names and scores (+/- par)
+• Course aerial or drone shots
+• Bunkers, water hazards, rough terrain
+• Clubhouse exterior or interior
+• Practice range or warm-up area
+• Commentary booth overlooking course
+• Player walking between holes
+• Club impact and divot close-ups
+• Hole flyover graphics
+• Trophy presentation or award ceremony
+• Player interviews on course
+
+FALSE = Everything else:
+• TV commercials and ads
+• Full-screen sponsor cards
+• Golf equipment ads (not part of broadcast)
+• Non-golf content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  esports: `ESPORTS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Esports broadcast content:
+• Video game footage (FPS, MOBA, RTS, Battle Royale, fighting, sports sim, etc.)
+• Player first-person or game-camera POV
+• Top-down or third-person game map view
+• In-game HUD: health bars, minimaps, ammo, abilities
+• Kill/elimination feed on screen
+• Champion or character select screen
+• Tournament bracket or standings display
+• Players at gaming stations, PCs, or consoles
+• Player webcam overlay on game footage
+• Caster/commentator desk with screens behind
+• Esports arena with crowd and large screens
+• Team logos and player name tags
+• Post-game stats, scoreboard, and results
+• Player profile or team intro cards
+• Coach or analyst reviewing gameplay
+
+FALSE = Everything else:
+• Traditional TV or streaming commercials
+• Game trailer or movie ads
+• Full-screen sponsor breaks
+• Non-gaming content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  aquatics: `AQUATICS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Aquatics/swimming broadcast content:
+• Swimmers in pool lanes during a race
+• Starting blocks and dive entry
+• Underwater camera shots of swimmers
+• Lane dividers (ropes) in pool
+• Timing boards or scoreboard at pool end
+• Swim caps and goggles
+• Relay hand-offs touching pool wall
+• Coaches on pool deck
+• Crowd in aquatics venue
+• Medal or award ceremony at pool
+• Athlete warmup in warm-up pool
+• Split times and results graphics
+• Commentators at poolside desk
+• Water polo players and ball in pool
+• Synchronized swimming performances
+• Springboard or platform diving
+• Open water swimming
+
+FALSE = Everything else:
+• TV commercials and ads
+• Full-screen sponsor cards
+• Non-aquatics content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  olympics: `OLYMPICS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Olympic broadcast content (any discipline):
+Summer sports: track & field, swimming, gymnastics, weightlifting, wrestling, judo, boxing, cycling, rowing, sailing, equestrian, shooting, archery, fencing, badminton, table tennis, volleyball, handball, water polo, field hockey, football/soccer, basketball, rugby, triathlon, modern pentathlon, skateboarding, surfing, sport climbing, breaking
+
+Winter sports: alpine skiing, cross-country skiing, ski jumping, biathlon, bobsled, luge, skeleton, speed skating, figure skating, curling, ice hockey, snowboard, freestyle skiing, short track
+
+Also TRUE:
+• Olympic venue or stadium with athletes
+• Olympic rings visible anywhere on screen
+• Medal ceremony: podium, flags, anthem
+• Torch relay
+• Opening or closing ceremony
+• Athlete profile or country feature
+• National team uniforms or flag
+• Olympic scoreboard, results, or rankings
+• Commentator desk with Olympic branding
+• Crowd in Olympic venue
+
+FALSE = Everything else:
+• TV commercials and ads
+• Full-screen sponsor cards
+• Non-Olympic content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  soccer: `SOCCER BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Soccer/football broadcast content:
+• Players on pitch in team kits
+• Ball in play or at a set piece
+• Goal celebrations or saves
+• Goalkeeper positioning or diving
+• Tactical formations and pressing
+• Corner kicks, free kicks, penalties, throw-ins
+• VAR review graphics or monitor
+• Scoreboard showing match time and score
+• Substitution boards or assistant referee
+• Manager or coach on touchline
+• Crowd in stadium with scarves/banners
+• Pre-match warm-up on pitch
+• Post-match interviews on pitch or tunnel
+• Studio analysts at desk
+• Replays with tactical overlay
+• League table or standings graphic
+• Transfer news or lineup graphics
+
+FALSE = Everything else:
+• TV commercials and ads
+• Full-screen sponsor cards
+• Non-soccer content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  motorsports: `MOTORSPORTS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Motorsports broadcast content:
+• Race cars on track (F1, NASCAR, IndyCar, WEC, MotoGP, WRC, WSBK, etc.)
+• Cockpit/onboard/driver helmet camera view
+• Pit stop action: tire changes, jack, wheel guns
+• Pit lane and garage interior
+• Race control room with monitors
+• Timing tower or lap time display
+• Track map with car or bike positions
+• Formation lap or grid lineup
+• Pace car or safety car deployment
+• Crash, incident, or yellow flag
+• Podium ceremony with champagne
+• Driver or rider interview in paddock
+• Team radio communication graphic
+• Commentator booth overlooking track or pit
+• Crowd in grandstands at race circuit
+• Qualifying or practice session
+• Motorcycle racing (leaning in corners)
+
+FALSE = Everything else:
+• Car or truck commercials (NOT a race — key false positive)
+• Full-screen sponsor cards
+• Non-motorsports content
+
+DECISION RULE: When uncertain → false. A car advertisement is NOT race coverage.
+
+RESPOND: true OR false (nothing else)`,
+
+  tennis: `TENNIS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Tennis broadcast content:
+• Players on court (grass, clay, or hard court surface)
+• Ball in play: serve, rally, volley, lob, overhead
+• Racquet impact and ball trajectory arc
+• Court lines and net clearly visible
+• Player serving motion or toss
+• Chair umpire in elevated seat
+• Ball kids/ball persons at court
+• Score display: sets, games, points, tiebreak
+• Hawkeye challenge replay graphic
+• Crowd in tennis venue stands
+• Player changeover at bench or towel
+• Coach or support team in player's box
+• Pre-match warm-up on court
+• Post-match handshake or trophy lift
+• Studio or on-court analyst
+• Doubles partners coordinating
+• Player challenging a line call
+
+FALSE = Everything else:
+• TV commercials and ads
+• Full-screen sponsor cards
+• Non-tennis content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`,
+
+  winter: `WINTER SPORTS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Winter sports broadcast content:
+• Alpine skiing: downhill, slalom, giant slalom, super-G, combined
+• Cross-country skiing: classic or skate technique on groomed trails
+• Ski jumping: in-air flight, telemark landing, judges' scores
+• Biathlon: skiing with rifle, shooting range targets
+• Speed skating on long-track oval ice
+• Short track speed skating with pack racing
+• Figure skating: jumps, spins, step sequences, lifts, pair skating
+• Ice dance: rhythm dance and free dance
+• Ice hockey: puck, sticks, skating, body checks, goals
+• Curling: stone delivery, sweeping, house/rings
+• Bobsled or luge or skeleton on icy track
+• Snowboarding: halfpipe, slopestyle, big air, giant slalom
+• Freestyle skiing: aerials, moguls, halfpipe, slopestyle
+• Snow-covered mountain or ice venue
+• Timing gate splits and leaderboard
+• Athletes in race suits, bibs, skates, or skis
+• Starting gate or starting area
+• Finish line celebration or crash
+• Crowd in snowy or ice venue
+
+FALSE = Everything else:
+• TV commercials and ads
+• Full-screen sponsor cards
+• Non-winter-sports content
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`
+};
+
+// Default prompt for backward compatibility
+const DEFAULT_PROMPT = SPORT_MODE_PROMPTS.general;
+
+// Load models from Ollama API and populate the model dropdown
+async function loadModels(ollamaUrl, savedModel) {
+  const select = document.getElementById('ollamaModel');
+  const statusDiv = document.getElementById('modelStatus');
+  if (!select || !statusDiv) return;
+
+  const url = (ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+  statusDiv.textContent = 'Loading models...';
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(`${url}/api/tags`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const models = (data.models || []).map(m => m.name).filter(Boolean);
+
+    select.innerHTML = '';
+    if (models.length === 0) {
+      select.innerHTML = '<option value="">No models found</option>';
+      statusDiv.textContent = 'No models available on this Ollama instance.';
+      return;
+    }
+
+    models.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+
+    // Restore previously saved model if it exists in the list
+    if (savedModel && models.includes(savedModel)) {
+      select.value = savedModel;
+    }
+
+    statusDiv.textContent = `${models.length} model(s) available.`;
+    console.log('[Football Ad Muter Popup] Models loaded:', models);
+  } catch (err) {
+    select.innerHTML = '<option value="">-- Failed to load models --</option>';
+    statusDiv.textContent = `Could not fetch models: ${err.message}`;
+    console.error('[Football Ad Muter Popup] Error loading models:', err);
+  }
+}
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt', 'monitoredTabId', 'popOutWindowId'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt', 'ollamaModel', 'sportMode', 'monitoredTabId', 'popOutWindowId'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
-  
+
   // Set existing settings
-  document.getElementById('ollamaUrl').value = result.ollamaUrl || 'http://localhost:11434';
-  
+  const savedOllamaUrl = result.ollamaUrl || 'http://localhost:11434';
+  document.getElementById('ollamaUrl').value = savedOllamaUrl;
+
+  // Load models from the saved URL, restoring previously selected model
+  loadModels(savedOllamaUrl, result.ollamaModel || '');
+
+  // Restore sport mode dropdown
+  const savedMode = result.sportMode || 'general';
+  const sportModeSelect = document.getElementById('sportMode');
+  if (sportModeSelect) sportModeSelect.value = savedMode;
+
   // Convert milliseconds to seconds for display
   const intervalMs = result.checkInterval || 10000;
   document.getElementById('checkInterval').value = intervalMs / 1000;
-  
-  // Load custom prompt or use default
-  document.getElementById('customPrompt').value = result.customPrompt || DEFAULT_PROMPT;
+
+  // Load custom prompt — use saved value, or fall back to the saved mode's default
+  document.getElementById('customPrompt').value = result.customPrompt || SPORT_MODE_PROMPTS[savedMode] || DEFAULT_PROMPT;
   
   isMonitoring = result.isEnabled || false;
   monitoredTabId = result.monitoredTabId || null;
@@ -350,6 +710,26 @@ window.addEventListener('unload', () => {
   }
 });
 
+// Refresh models button
+const refreshModelsBtn = document.getElementById('refreshModelsBtn');
+if (refreshModelsBtn) {
+  refreshModelsBtn.addEventListener('click', () => {
+    const url = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
+    const currentModel = document.getElementById('ollamaModel').value;
+    loadModels(url, currentModel);
+  });
+}
+
+// Reload models when URL field loses focus
+const ollamaUrlInput = document.getElementById('ollamaUrl');
+if (ollamaUrlInput) {
+  ollamaUrlInput.addEventListener('blur', () => {
+    const url = ollamaUrlInput.value || 'http://localhost:11434';
+    const currentModel = document.getElementById('ollamaModel').value;
+    loadModels(url, currentModel);
+  });
+}
+
 // Save settings
 document.getElementById('saveBtn').addEventListener('click', () => {
   const ollamaUrl = document.getElementById('ollamaUrl').value;
@@ -371,11 +751,15 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   }
   
   const checkInterval = checkIntervalSeconds * 1000;
-  
+  const ollamaModel = document.getElementById('ollamaModel').value;
+  const sportMode = document.getElementById('sportMode').value;
+
   const settings = {
     ollamaUrl: ollamaUrl,
     checkInterval: checkInterval,
-    customPrompt: customPrompt
+    customPrompt: customPrompt,
+    ollamaModel: ollamaModel,
+    sportMode: sportMode
   };
   
   console.log('[Football Ad Muter Popup] Saving settings:', { 
@@ -413,11 +797,31 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   });
 });
 
-// Reset prompt to default
+// Sport mode change — auto-fill prompt with mode preset
+const sportModeSelect = document.getElementById('sportMode');
+if (sportModeSelect) {
+  sportModeSelect.addEventListener('change', () => {
+    const mode = sportModeSelect.value;
+    if (mode === 'custom') {
+      // Leave the textarea as-is for manual editing
+      return;
+    }
+    const preset = SPORT_MODE_PROMPTS[mode];
+    if (preset) {
+      document.getElementById('customPrompt').value = preset;
+      console.log('[Football Ad Muter Popup] Sport mode changed to:', mode);
+    }
+  });
+}
+
+// Reset prompt to mode default
 document.getElementById('resetPromptBtn').addEventListener('click', () => {
-  if (confirm('Reset the AI prompt to default? This will overwrite your custom prompt.')) {
-    document.getElementById('customPrompt').value = DEFAULT_PROMPT;
-    console.log('[Football Ad Muter Popup] Prompt reset to default');
+  const mode = document.getElementById('sportMode').value;
+  const preset = SPORT_MODE_PROMPTS[mode] || DEFAULT_PROMPT;
+  const modeName = sportModeSelect ? sportModeSelect.options[sportModeSelect.selectedIndex].text : 'default';
+  if (confirm(`Reset the prompt to the "${modeName}" default? This will overwrite any manual edits.`)) {
+    document.getElementById('customPrompt').value = preset;
+    console.log('[Football Ad Muter Popup] Prompt reset to mode default:', mode);
   }
 });
 
