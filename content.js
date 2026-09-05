@@ -14,6 +14,84 @@ let adaptiveSampler = null;
 let lockedVideo = null; // Reference to the locked video element
 let videoLockEnabled = false; // Whether video locking is active
 
+// DRM capture mode (Peacock, ESPN, etc.) - in-page canvas capture is blocked,
+// so we route frame capture through a tab-capture stream in the background
+// offscreen document, and fall back to audio/DOM signals.
+let drmCaptureArmed = false;      // tab-capture stream is active in background
+let drmSignalsStarted = false;    // __samSignals audio analysis running
+let lastDrmStatusCheck = 0;
+let drmArmPromptShown = false;
+
+// Most recent detector decision, surfaced to the on-page FAB widget.
+let lastDecision = {
+  state: 'idle',        // 'idle' | 'gameplay' | 'ad' | 'analyzing' | 'inconclusive'
+  isGameplay: null,
+  confidence: null,
+  method: null,
+  source: null,         // 'vision' | 'audio' | 'dom'
+  at: 0
+};
+
+// Build a status snapshot for the FAB widget / external callers.
+function getSamStatus() {
+  let hasVideo = false;
+  let muted = null;
+  try {
+    const v = getActiveVideo();
+    if (v) { hasVideo = true; muted = !!v.muted; }
+  } catch (e) { /* ignore */ }
+
+  let queue = null;
+  try {
+    if (requestQueue) {
+      const q = requestQueue.getStatus();
+      queue = { pending: q.queueLength, active: q.activeRequests };
+    }
+  } catch (e) { /* ignore */ }
+
+  return {
+    monitoring: isMonitoring,
+    hasVideo,
+    muted,
+    drm: !!currentSite.isDrmProtected,
+    drmCaptureArmed,
+    locked: videoLockEnabled,
+    decision: lastDecision,
+    queue
+  };
+}
+
+// Push the latest status to the FAB if it exists.
+function notifyFab() {
+  try {
+    if (window.__samFab && typeof window.__samFab.update === 'function') {
+      window.__samFab.update(getSamStatus());
+    }
+  } catch (e) { /* widget not ready */ }
+}
+
+// Single entry point for starting monitoring (used by the popup message, the
+// FAB, and anywhere else). Keeps storage in sync so every surface agrees.
+function beginMonitoring() {
+  const payload = currentTabId
+    ? { monitoredTabId: currentTabId, isEnabled: true }
+    : { isEnabled: true };
+  chrome.storage.sync.set(payload, () => startMonitoring());
+}
+
+// Control surface for the injected FAB widget (fab.js).
+window.__samControl = {
+  start: () => beginMonitoring(),
+  stop: () => stopMonitoring(),
+  resetPlayer: () => resetVideoPlayer(),
+  getStatus: () => getSamStatus(),
+  openSettings: () => {
+    try {
+      chrome.runtime.sendMessage({ action: 'openSettingsWindow' }, () => void chrome.runtime.lastError);
+    } catch (e) { /* background asleep */ }
+  }
+};
+
 // Get the current tab ID
 if (typeof chrome !== 'undefined' && chrome.runtime) {
   // Request tab ID from background script
@@ -88,11 +166,9 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) =>
   
   // Log that the extension loaded
   logActivity('🚀 Extension loaded and ready', 'info');
-  
-  if (result.isEnabled) {
-    console.log('[Football Ad Muter] Auto-starting monitoring from saved state');
-    startMonitoring();
-  }
+
+  // Monitoring is never auto-started. The user must click "Start Monitoring"
+  // each session (avoids surprise captures / tab-capture prompts on reload).
 });
 
 // Activity logging function - logs important events to the popup
@@ -188,16 +264,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   } else if (request.action === 'start') {
     console.log('[Football Ad Muter] Start command received');
-    // Store this tab as the monitored tab
-    if (currentTabId) {
-      chrome.storage.sync.set({ monitoredTabId: currentTabId }, () => {
-        startMonitoring();
-      });
-      sendResponse({ status: 'started' });
-    } else {
-      startMonitoring();
-      sendResponse({ status: 'started' });
-    }
+    beginMonitoring();
+    sendResponse({ status: 'started' });
     return false;
   } else if (request.action === 'stop') {
     console.log('[Football Ad Muter] Stop command received');
@@ -338,7 +406,11 @@ function startMonitoring() {
     console.log('[Football Ad Muter] Queue config:', requestQueue.getStatus());
     console.log('[Football Ad Muter] Sampler config:', adaptiveSampler.getStatus());
     logActivity(`✅ Monitoring started (adaptive sampling: ${checkIntervalTime/1000}s base)`, 'success');
-  
+
+    lastDecision = { state: 'analyzing', isGameplay: null, confidence: null, method: null, source: null, at: Date.now() };
+    try { if (window.__samFab) window.__samFab.ensure(); } catch (e) {}
+    notifyFab();
+
     // Track the last video we captured to detect video changes
     let lastVideoElement = null;
     let consecutiveFailures = 0;
@@ -380,10 +452,9 @@ function startMonitoring() {
       console.log('[Football Ad Muter] Running initial DRM protection check...');
       checkForDrmProtection(video).then(result => {
         if (result.isDrm) {
-          console.log('[Football Ad Muter] 🔒 DRM PROTECTED CONTENT DETECTED - STOPPING MONITORING');
-          logActivity(`🔒 DRM Protected Content Detected (${result.keySystem}) - Monitoring stopped`, 'error');
-          // Stop monitoring
-          stopMonitoring();
+          console.log('[Football Ad Muter] 🔒 DRM PROTECTED CONTENT DETECTED - switching to DRM capture mode');
+          logActivity(`🔒 DRM content (${result.keySystem}) - using tab capture + audio signals`, 'warning');
+          enterDrmMode(video);
           drmCheckPerformed = true;
         } else {
           console.log('[Football Ad Muter] No DRM protection detected, continuing...');
@@ -395,11 +466,11 @@ function startMonitoring() {
       });
     }
     
-    // If DRM was detected, stop processing
+    // In DRM mode, keep the audio/DOM signal analysis warm on the current video.
     if (currentSite.isDrmProtected) {
-      return;
+      enterDrmMode(video);
     }
-    
+
     // Detect if video element changed (e.g., ad vs content switch)
     if (lastVideoElement && lastVideoElement !== video) {
       console.log('[Football Ad Muter] 🔄 Video element changed - different element detected');
@@ -479,7 +550,22 @@ function stopMonitoring() {
   
   // Release video lock when stopping
   unlockVideo();
-  
+
+  // Tear down DRM capture mode
+  if (drmSignalsStarted && window.__samSignals) {
+    try { window.__samSignals.stop(); } catch (e) {}
+  }
+  drmSignalsStarted = false;
+  drmArmPromptShown = false;
+  if (drmCaptureArmed) {
+    try { chrome.runtime.sendMessage({ action: 'stopTabCapture' }, () => void chrome.runtime.lastError); } catch (e) {}
+  }
+  drmCaptureArmed = false;
+
+  chrome.storage.sync.set({ isEnabled: false });
+  lastDecision = { state: 'idle', isGameplay: null, confidence: null, method: null, source: null, at: Date.now() };
+  notifyFab();
+
   console.log('[Football Ad Muter] Monitoring stopped');
   logActivity('⏹️ Monitoring stopped', 'info');
 }
@@ -808,6 +894,183 @@ function saveDrmStatus(isDrm, keySystem) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// DRM capture mode
+// ---------------------------------------------------------------------------
+
+// Switch the current site into DRM mode: keep monitoring, but capture frames
+// via background tab-capture and warm up the audio/DOM signal analyser.
+function enterDrmMode(video) {
+  currentSite.isDrmProtected = true;
+
+  if (!drmSignalsStarted && window.__samSignals && video) {
+    try {
+      window.__samSignals.start(video);
+      drmSignalsStarted = true;
+      console.log('[Football Ad Muter] 🔊 DRM audio/DOM signal analysis started');
+    } catch (e) {
+      console.warn('[Football Ad Muter] Could not start DRM signals:', e.message);
+    }
+  } else if (drmSignalsStarted && window.__samSignals && video) {
+    // Re-bind if the video element changed.
+    window.__samSignals.start(video);
+  }
+
+  refreshDrmCaptureStatus();
+
+  // Tab capture is auto-armed on Start. If it still isn't active after a grace
+  // period, tell the user they can enable it manually from the popup.
+  if (!drmArmPromptShown) {
+    drmArmPromptShown = true;
+    setTimeout(() => {
+      refreshDrmCaptureStatus();
+      setTimeout(() => {
+        if (!drmCaptureArmed) {
+          logActivity('🔒 DRM frame capture unavailable — using audio/on-screen ad cues. Reopen the popup and click "Enable DRM Capture" to retry.', 'warning');
+        }
+      }, 500);
+    }, 6000);
+  }
+}
+
+// Ask the background script whether the tab-capture stream is live.
+function refreshDrmCaptureStatus() {
+  const now = Date.now();
+  if (now - lastDrmStatusCheck < 3000) return;
+  lastDrmStatusCheck = now;
+  try {
+    chrome.runtime.sendMessage({ action: 'getDrmCaptureStatus' }, (resp) => {
+      if (chrome.runtime.lastError || !resp) return;
+      const was = drmCaptureArmed;
+      drmCaptureArmed = !!resp.armed;
+      if (drmCaptureArmed && !was) {
+        logActivity('🎥 DRM tab capture armed - analyzing video frames', 'success');
+      }
+    });
+  } catch (e) { /* background asleep */ }
+}
+
+// Compute the video element's rectangle as fractions of the viewport so the
+// offscreen document can crop the captured tab frame at any resolution.
+function getNormalizedVideoRect(video) {
+  try {
+    const r = video.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (!vw || !vh || r.width < 4 || r.height < 4) return null;
+    let x = r.left / vw;
+    let y = r.top / vh;
+    let w = r.width / vw;
+    let h = r.height / vh;
+    x = Math.min(1, Math.max(0, x));
+    y = Math.min(1, Math.max(0, y));
+    w = Math.min(1 - x, Math.max(0, w));
+    h = Math.min(1 - y, Math.max(0, h));
+    return { x, y, w, h };
+  } catch (e) {
+    return null;
+  }
+}
+
+function base64ToBlob(b64, type = 'image/jpeg') {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type });
+}
+
+// Request a cropped frame from the background offscreen tab-capture stream.
+// Returns { blob, method } or null if unavailable / black.
+async function captureViaTabCapture(video) {
+  refreshDrmCaptureStatus();
+  if (!drmCaptureArmed) {
+    console.log('[Football Ad Muter] DRM capture not armed - skipping vision capture');
+    return null;
+  }
+
+  const rect = getNormalizedVideoRect(video);
+
+  const resp = await new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(null), 8000);
+    try {
+      chrome.runtime.sendMessage(
+        { action: 'captureDrmFrame', rect, maxWidth: 800 },
+        (r) => {
+          clearTimeout(timeout);
+          if (chrome.runtime.lastError) {
+            console.warn('[Football Ad Muter] captureDrmFrame error:', chrome.runtime.lastError.message);
+            resolve(null);
+          } else {
+            resolve(r);
+          }
+        }
+      );
+    } catch (e) {
+      clearTimeout(timeout);
+      resolve(null);
+    }
+  });
+
+  if (!resp || !resp.ok) {
+    if (resp && resp.error === 'not-armed') {
+      drmCaptureArmed = false;
+    }
+    console.log('[Football Ad Muter] DRM frame capture failed:', resp && resp.error);
+    return null;
+  }
+
+  if (resp.black) {
+    console.log('[Football Ad Muter] ⬛ DRM frame is black (HDCP/L1 blackout) - falling back to signals');
+    logActivity('⬛ Protected frame unreadable (black) - using audio/DOM signals', 'warning');
+    return null;
+  }
+
+  return { blob: base64ToBlob(resp.base64), method: 'Tab Capture (DRM)' };
+}
+
+// When no usable frame is available, decide mute/unmute from audio + DOM markers.
+function decideFromSignalsOnly(video) {
+  const s = window.__samSignals && window.__samSignals.read();
+  if (!s || !s.combined || s.combined.likelyAd === null) {
+    console.log('[Football Ad Muter] DRM signals inconclusive, no action');
+    return;
+  }
+
+  adaptiveSampler.markCapture();
+
+  const isAd = s.combined.likelyAd;
+  const pct = Math.round(s.combined.confidence * 100);
+  let action = null;
+
+  if (isAd) {
+    if (!video.muted) {
+      video.muted = true;
+      video.dataset.mutedByExtension = 'true';
+      action = `Muted via ${s.combined.source} signal (${pct}%)`;
+      logActivity(`🔇 MUTING - ad detected via ${s.combined.source} signal (${pct}%)`, 'warning');
+    }
+  } else {
+    if (video.dataset.mutedByExtension === 'true') {
+      video.muted = false;
+      delete video.dataset.mutedByExtension;
+      action = `Unmuted via ${s.combined.source} signal (${pct}%)`;
+      logActivity(`🔊 UNMUTING - gameplay via ${s.combined.source} signal (${pct}%)`, 'success');
+    }
+  }
+
+  saveLogEntry(!isAd, action || `Signal check: ${s.combined.source} (${pct}%)`, null, s);
+
+  lastDecision = {
+    state: isAd ? 'ad' : 'gameplay',
+    isGameplay: !isAd,
+    confidence: s.combined.confidence,
+    method: `${s.combined.source} signal`,
+    source: s.combined.source,
+    at: Date.now()
+  };
+  notifyFab();
+}
+
 // Helper function to check if canvas has actual video content
 function checkCanvasContent(ctx, width, height) {
   const imageData = ctx.getImageData(0, 0, Math.min(width, 100), Math.min(height, 100));
@@ -1029,6 +1292,14 @@ async function captureVideoFrame(video, maxWidth = 800) {
 }
 
 function captureAndAnalyzeVideo(video) {
+  // In DRM mode the frame comes from the background tab-capture stream, not
+  // this element, so skip requestVideoFrameCallback (it may never fire).
+  if (currentSite.isDrmProtected) {
+    console.log('[Football Ad Muter] 📹 DRM mode capture');
+    performCapture(video);
+    return;
+  }
+
   // Use requestVideoFrameCallback for precise timing if available
   if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
     video.requestVideoFrameCallback((now, metadata) => {
@@ -1079,9 +1350,21 @@ async function performCapture(video) {
       dimensions: `${video.videoWidth}x${video.videoHeight}`
     });
     
-    // Try to capture the video frame using multiple methods
-    const captureResult = await captureVideoFrame(video, 800);
-    
+    // Try to capture the video frame. DRM content can't be read via in-page
+    // canvas, so route through the background tab-capture path instead.
+    let captureResult;
+    if (currentSite.isDrmProtected) {
+      captureResult = await captureViaTabCapture(video);
+      if (!captureResult) {
+        // No usable frame (capture not armed, or DRM black frame) -> decide
+        // from audio/DOM signals alone and skip the vision pipeline.
+        decideFromSignalsOnly(video);
+        return;
+      }
+    } else {
+      captureResult = await captureVideoFrame(video, 800);
+    }
+
     if (!captureResult) {
       console.error('[Football Ad Muter] Failed to capture video frame with any method');
       logActivity('❌ Failed to capture video frame', 'error');
@@ -1267,6 +1550,17 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
     logActivity('⚠️ Analysis inconclusive', 'warning');
   }
   
+  // Update FAB status
+  lastDecision = {
+    state: isGameplay === true ? 'gameplay' : (isGameplay === false ? 'ad' : 'inconclusive'),
+    isGameplay: isGameplay,
+    confidence: null,
+    method: captureMethod || null,
+    source: 'vision',
+    at: Date.now()
+  };
+  notifyFab();
+
   // Save log entry with image data and full LLM response
   saveLogEntry(isGameplay, action, imageDataUrl, response);
   

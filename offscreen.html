@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>SAM Offscreen Capture</title></head>
+<body>
+  <!-- Hidden document that owns the tab-capture MediaStream so capture keeps
+       working while the sports tab is in the background. -->
+  <video id="cap" autoplay muted playsinline></video>
+  <canvas id="draw"></canvas>
+  <script src="offscreen.js"></script>
+</body>
+</html>

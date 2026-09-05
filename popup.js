@@ -69,13 +69,9 @@ function displayDrmStatus(drmStatus) {
     <div><strong>Detected at:</strong> ${detectionTime}</div>
   `;
   
-  // Reset monitoring state when DRM is detected
-  isMonitoring = false;
-  chrome.storage.sync.set({ isEnabled: false });
-  updateUI();
-  
+  // DRM is now handled via tab capture + audio/DOM signals, so monitoring
+  // keeps running. Just surface the alert and let the user enable capture.
   console.log('[Football Ad Muter Popup] DRM status displayed:', drmStatus);
-  console.log('[Football Ad Muter Popup] Monitoring state reset to inactive');
 }
 
 // Run on popup load
@@ -91,6 +87,41 @@ let popOutWindowId = null; // Track the pop-out window ID
 const expandedActivityEntries = new Set();
 const expandedLogEntries = new Set();
 const expandedLLMResponses = new Set();
+
+// Arm the background tab-capture stream for a tab. Must run while the popup
+// is open (the click that opened it is the required user gesture). Safe to
+// call on any site: non-DRM pages keep using in-page canvas capture and just
+// ignore the stream. Called automatically on Start; also wired to the manual
+// "Enable DRM Capture" button.
+function armDrmCaptureForTab(tabId, cb) {
+  cb = cb || function () {};
+  if (!tabId || !chrome.tabCapture || !chrome.tabCapture.getMediaStreamId) {
+    cb({ ok: false, error: 'unavailable' });
+    return;
+  }
+  try {
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+      const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
+      if (err || !streamId) {
+        console.warn('[Football Ad Muter Popup] DRM capture not armed:', err || 'no streamId');
+        cb({ ok: false, error: err || 'no-stream-id' });
+        return;
+      }
+      chrome.runtime.sendMessage({ action: 'armTabCapture', streamId, tabId }, (res) => {
+        const e2 = chrome.runtime.lastError && chrome.runtime.lastError.message;
+        if (e2 || !res || !res.ok) {
+          console.warn('[Football Ad Muter Popup] armTabCapture failed:', (res && res.error) || e2);
+          cb({ ok: false, error: (res && res.error) || e2 || 'arm-failed' });
+          return;
+        }
+        console.log('[Football Ad Muter Popup] DRM tab capture armed for tab', tabId);
+        cb({ ok: true });
+      });
+    });
+  } catch (e) {
+    cb({ ok: false, error: String(e && e.message || e) });
+  }
+}
 
 // Helper function to get the target tab for communication
 // Returns the monitored tab if available, otherwise the last active regular tab
@@ -834,6 +865,21 @@ document.getElementById('startBtn').addEventListener('click', () => {
   
   getTargetTab((tab) => {
     if (tab) {
+      // Arm DRM capture up front, within this user gesture, so protected
+      // sites (Peacock/ESPN) work without a second click.
+      armDrmCaptureForTab(tab.id, (res) => {
+        const statusEl = document.getElementById('drmCaptureStatus');
+        const enableBtn = document.getElementById('enableDrmCaptureBtn');
+        const disableBtn = document.getElementById('disableDrmCaptureBtn');
+        if (res && res.ok) {
+          if (statusEl) statusEl.textContent = 'Tab capture active (auto-enabled on Start).';
+          if (enableBtn) enableBtn.disabled = true;
+          if (disableBtn) disableBtn.disabled = false;
+        } else if (statusEl) {
+          statusEl.textContent = 'Tab capture not available on this tab.';
+        }
+      });
+
       console.log('[Football Ad Muter Popup] Sending start command to tab:', tab.id);
       chrome.tabs.sendMessage(tab.id, { action: 'start' }, (response) => {
         if (chrome.runtime.lastError) {
@@ -1193,7 +1239,53 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.storage.sync.set({ drmStatus: null });
     });
   }
-  
+
+  // Wire DRM tab-capture buttons
+  const enableDrmCaptureBtn = document.getElementById('enableDrmCaptureBtn');
+  const disableDrmCaptureBtn = document.getElementById('disableDrmCaptureBtn');
+
+  function updateDrmCaptureUI(armed, message) {
+    if (enableDrmCaptureBtn) enableDrmCaptureBtn.disabled = !!armed;
+    if (disableDrmCaptureBtn) disableDrmCaptureBtn.disabled = !armed;
+    const statusEl = document.getElementById('drmCaptureStatus');
+    if (statusEl && message != null) statusEl.textContent = message;
+  }
+
+  // Reflect current state when the popup opens
+  try {
+    chrome.runtime.sendMessage({ action: 'getDrmCaptureStatus' }, (resp) => {
+      if (chrome.runtime.lastError || !resp) return;
+      updateDrmCaptureUI(resp.armed, resp.armed ? 'Tab capture active.' : 'Tab capture not enabled.');
+    });
+  } catch (e) {}
+
+  if (enableDrmCaptureBtn) {
+    enableDrmCaptureBtn.addEventListener('click', () => {
+      getTargetTab((tab) => {
+        if (!tab || !tab.id) {
+          alert('No target tab. Start monitoring on the video tab first.');
+          return;
+        }
+        updateDrmCaptureUI(false, 'Requesting tab capture…');
+        armDrmCaptureForTab(tab.id, (res) => {
+          if (res && res.ok) {
+            updateDrmCaptureUI(true, 'Tab capture active — DRM frames are being analyzed.');
+          } else {
+            updateDrmCaptureUI(false, 'Could not start capture: ' + ((res && res.error) || 'unknown error'));
+          }
+        });
+      });
+    });
+  }
+
+  if (disableDrmCaptureBtn) {
+    disableDrmCaptureBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'stopTabCapture' }, () => {
+        updateDrmCaptureUI(false, 'Tab capture stopped.');
+      });
+    });
+  }
+
   // Wire video lock buttons
   const lockVideoBtn = document.getElementById('lockVideoBtn');
   const unlockVideoBtn = document.getElementById('unlockVideoBtn');

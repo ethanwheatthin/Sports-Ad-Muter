@@ -35,6 +35,73 @@ RESPOND: true OR false (nothing else)`;
 // Keep service worker alive
 let keepAliveInterval;
 
+// ---------------------------------------------------------------------------
+// DRM tab-capture support (offscreen document)
+// ---------------------------------------------------------------------------
+let drmCapture = { armed: false, tabId: null };
+let creatingOffscreen = null;
+
+async function hasOffscreenDocument() {
+  if (chrome.runtime.getContexts) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT']
+    });
+    return contexts.length > 0;
+  }
+  return false;
+}
+
+async function ensureOffscreenDocument() {
+  if (await hasOffscreenDocument()) return;
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+    return;
+  }
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['USER_MEDIA', 'DISPLAY_MEDIA'],
+    justification: 'Capture DRM-protected video frames for ad detection when in-page canvas capture is blocked.'
+  });
+  try {
+    await creatingOffscreen;
+  } finally {
+    creatingOffscreen = null;
+  }
+}
+
+async function armDrmCapture(streamId, tabId) {
+  await ensureOffscreenDocument();
+  const res = await chrome.runtime.sendMessage({
+    target: 'offscreen',
+    action: 'offscreen-start-capture',
+    streamId
+  });
+  if (res && res.ok) {
+    drmCapture = { armed: true, tabId: tabId || null };
+  }
+  return res;
+}
+
+async function captureDrmFrame(rect, maxWidth) {
+  if (!drmCapture.armed) return { ok: false, error: 'not-armed' };
+  return chrome.runtime.sendMessage({
+    target: 'offscreen',
+    action: 'offscreen-capture-frame',
+    rect,
+    maxWidth
+  });
+}
+
+async function stopDrmCapture() {
+  drmCapture = { armed: false, tabId: null };
+  if (await hasOffscreenDocument()) {
+    try {
+      await chrome.runtime.sendMessage({ target: 'offscreen', action: 'offscreen-stop-capture' });
+      await chrome.offscreen.closeDocument();
+    } catch (e) { /* already gone */ }
+  }
+}
+
 // Track API performance metrics
 let apiMetrics = {
   totalRequests: 0,
@@ -87,6 +154,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false; // Synchronous response
   }
   
+  // Messages addressed to the offscreen document — ignore here.
+  if (request && request.target === 'offscreen') {
+    return false;
+  }
+
+  if (request.action === 'drmCaptureEnded') {
+    console.log('[Football Ad Muter Background] DRM capture stream ended');
+    drmCapture = { armed: false, tabId: null };
+    return false;
+  }
+
+  if (request.action === 'armTabCapture') {
+    // streamId is obtained in the popup (needs the user gesture there).
+    armDrmCapture(request.streamId, request.tabId)
+      .then((res) => sendResponse(res || { ok: false, error: 'no-response' }))
+      .catch((err) => sendResponse({ ok: false, error: String(err && err.message || err) }));
+    return true;
+  }
+
+  if (request.action === 'stopTabCapture') {
+    stopDrmCapture()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: String(err && err.message || err) }));
+    return true;
+  }
+
+  if (request.action === 'openSettingsWindow') {
+    chrome.windows.create({
+      url: chrome.runtime.getURL('popup.html'),
+      type: 'popup',
+      width: 420,
+      height: 640
+    }, () => void chrome.runtime.lastError);
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (request.action === 'getDrmCaptureStatus') {
+    sendResponse({ armed: drmCapture.armed, tabId: drmCapture.tabId });
+    return false;
+  }
+
+  if (request.action === 'captureDrmFrame') {
+    captureDrmFrame(request.rect, request.maxWidth || 800)
+      .then((res) => sendResponse(res || { ok: false, error: 'no-response' }))
+      .catch((err) => sendResponse({ ok: false, error: String(err && err.message || err) }));
+    return true;
+  }
+
   if (request.action === 'getTabId') {
     // Return the tab ID of the sender
     if (sender.tab && sender.tab.id) {
