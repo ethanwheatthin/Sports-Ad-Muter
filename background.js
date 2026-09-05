@@ -180,6 +180,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'captureVisibleTabFrame') {
+    const tab = sender && sender.tab;
+    if (!tab) { sendResponse({ ok: false, error: 'no-tab' }); return false; }
+    chrome.tabs.get(tab.id, (t) => {
+      if (chrome.runtime.lastError || !t || !t.active) {
+        sendResponse({ ok: false, error: 'not-visible' });
+        return;
+      }
+      chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 80 }, (dataUrl) => {
+        if (chrome.runtime.lastError || !dataUrl) {
+          sendResponse({ ok: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'capture-failed' });
+          return;
+        }
+        sendResponse({ ok: true, dataUrl });
+      });
+    });
+    return true;
+  }
+
   if (request.action === 'openSettingsWindow') {
     chrome.windows.create({
       url: chrome.runtime.getURL('popup.html'),

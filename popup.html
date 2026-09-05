@@ -109,10 +109,10 @@
           <div class="drm-alert-title">&#128274; DRM Protected Content</div>
           <button id="closeDrmBtn" class="drm-alert-close" title="Close alert">&#10005;</button>
         </div>
-        <div class="drm-alert-message">This video is protected by DRM. In-page frame capture is blocked, so S.A.M can use browser tab capture plus audio/on-screen ad cues instead. Click below to enable tab capture for this tab.</div>
+        <div class="drm-alert-message">This video is protected by DRM. S.A.M captures frames via a viewport screenshot while this tab is focused (fullscreen works), and uses audio / on-screen ad cues when it's in the background. For vision-based detection in a <em>background</em> tab, enable background capture below &mdash; note this prevents the player from going true fullscreen.</div>
         <div id="drmDetails" class="drm-alert-details"></div>
         <div class="button-group" style="margin-top: 8px;">
-          <button id="enableDrmCaptureBtn">&#127909; Enable DRM Capture</button>
+          <button id="enableDrmCaptureBtn">&#127909; Enable Background Capture</button>
           <button id="disableDrmCaptureBtn" disabled>&#9632; Disable</button>
         </div>
         <div id="drmCaptureStatus" class="drm-alert-details" style="margin-top: 6px;"></div>

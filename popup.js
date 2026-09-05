@@ -865,21 +865,10 @@ document.getElementById('startBtn').addEventListener('click', () => {
   
   getTargetTab((tab) => {
     if (tab) {
-      // Arm DRM capture up front, within this user gesture, so protected
-      // sites (Peacock/ESPN) work without a second click.
-      armDrmCaptureForTab(tab.id, (res) => {
-        const statusEl = document.getElementById('drmCaptureStatus');
-        const enableBtn = document.getElementById('enableDrmCaptureBtn');
-        const disableBtn = document.getElementById('disableDrmCaptureBtn');
-        if (res && res.ok) {
-          if (statusEl) statusEl.textContent = 'Tab capture active (auto-enabled on Start).';
-          if (enableBtn) enableBtn.disabled = true;
-          if (disableBtn) disableBtn.disabled = false;
-        } else if (statusEl) {
-          statusEl.textContent = 'Tab capture not available on this tab.';
-        }
-      });
-
+      // DRM frames are captured via captureVisibleTab while the tab is focused
+      // (fullscreen-safe). Background vision capture is opt-in via the
+      // "Enable Background Capture" button, since a live capture stream blocks
+      // the page from entering true fullscreen.
       console.log('[Football Ad Muter Popup] Sending start command to tab:', tab.id);
       chrome.tabs.sendMessage(tab.id, { action: 'start' }, (response) => {
         if (chrome.runtime.lastError) {

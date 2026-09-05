@@ -918,18 +918,9 @@ function enterDrmMode(video) {
 
   refreshDrmCaptureStatus();
 
-  // Tab capture is auto-armed on Start. If it still isn't active after a grace
-  // period, tell the user they can enable it manually from the popup.
   if (!drmArmPromptShown) {
     drmArmPromptShown = true;
-    setTimeout(() => {
-      refreshDrmCaptureStatus();
-      setTimeout(() => {
-        if (!drmCaptureArmed) {
-          logActivity('🔒 DRM frame capture unavailable — using audio/on-screen ad cues. Reopen the popup and click "Enable DRM Capture" to retry.', 'warning');
-        }
-      }, 500);
-    }, 6000);
+    logActivity('🔒 DRM mode: capturing frames while this tab is in focus (fullscreen OK); audio/on-screen cues when backgrounded. Enable Background Capture in the popup for vision in background tabs.', 'info');
   }
 }
 
@@ -979,12 +970,98 @@ function base64ToBlob(b64, type = 'image/jpeg') {
   return new Blob([arr], { type });
 }
 
-// Request a cropped frame from the background offscreen tab-capture stream.
-// Returns { blob, method } or null if unavailable / black.
+// Ask the background for a viewport screenshot of this (active) tab.
+function requestVisibleTabFrame() {
+  return new Promise((resolve) => {
+    const to = setTimeout(() => resolve(null), 6000);
+    try {
+      chrome.runtime.sendMessage({ action: 'captureVisibleTabFrame' }, (r) => {
+        clearTimeout(to);
+        resolve(chrome.runtime.lastError ? null : r);
+      });
+    } catch (e) { clearTimeout(to); resolve(null); }
+  });
+}
+
+function isCanvasBlack(ctx, w, h) {
+  try {
+    const sw = Math.min(w, 100), sh = Math.min(h, 100);
+    const d = ctx.getImageData(0, 0, sw, sh).data;
+    let sum = 0;
+    const n = sw * sh;
+    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    return (sum / n) < 6;
+  } catch (e) { return false; }
+}
+
+// Crop a full-viewport screenshot down to the video element's rectangle.
+// The screenshot is a JPEG, not the protected <video>, so this is not blocked.
+async function cropShotToVideo(dataUrl, video) {
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = dataUrl;
+    });
+    const rect = video.getBoundingClientRect();
+    const vw = window.innerWidth || img.width;
+    const vh = window.innerHeight || img.height;
+    const rx = img.width / vw;
+    const ry = img.height / vh;
+    let sx = Math.max(0, rect.left * rx);
+    let sy = Math.max(0, rect.top * ry);
+    let sw = Math.min(img.width - sx, rect.width * rx);
+    let sh = Math.min(img.height - sy, rect.height * ry);
+    if (sw < 20 || sh < 20) { sx = 0; sy = 0; sw = img.width; sh = img.height; }
+
+    const maxW = 800;
+    const scale = sw > maxW ? maxW / sw : 1;
+    const dw = Math.max(1, Math.round(sw * scale));
+    const dh = Math.max(1, Math.round(sh * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = dw;
+    canvas.height = dh;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+    const black = isCanvasBlack(ctx, dw, dh);
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.8));
+    return blob ? { blob, black } : null;
+  } catch (e) {
+    console.warn('[Football Ad Muter] cropShotToVideo failed:', e && e.message);
+    return null;
+  }
+}
+
+// Capture a DRM video frame. Foreground tabs use a viewport screenshot
+// (captureVisibleTab) which works in fullscreen and needs no stream.
+// Backgrounded tabs use the opt-in offscreen tab-capture stream, if armed.
+// Returns { blob, method } or null (caller falls back to audio/DOM signals).
 async function captureViaTabCapture(video) {
+  const foreground = document.visibilityState === 'visible' && !document.hidden;
+
+  if (foreground) {
+    const shot = await requestVisibleTabFrame();
+    if (shot && shot.ok && shot.dataUrl) {
+      const cropped = await cropShotToVideo(shot.dataUrl, video);
+      if (cropped && cropped.blob && !cropped.black) {
+        return { blob: cropped.blob, method: 'Visible Tab (DRM)' };
+      }
+      if (cropped && cropped.black) {
+        logActivity('⬛ Protected frame unreadable (black) - using audio/DOM signals', 'warning');
+        return null;
+      }
+    } else if (shot && shot.error && shot.error !== 'not-visible') {
+      console.log('[Football Ad Muter] captureVisibleTab failed:', shot.error);
+    }
+    // fall through to stream / signals
+  }
+
+  // Background path: opt-in offscreen tab-capture stream.
   refreshDrmCaptureStatus();
   if (!drmCaptureArmed) {
-    console.log('[Football Ad Muter] DRM capture not armed - skipping vision capture');
+    console.log('[Football Ad Muter] Background DRM capture not enabled - using signals');
     return null;
   }
 

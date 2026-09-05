@@ -126,7 +126,7 @@
         if (dec.method) parts.push(dec.method);
         sub = parts.join(' · ');
       }
-      if (s.drm) sub = (sub ? sub + ' · ' : '') + (s.drmCaptureArmed ? 'DRM: tab capture' : 'DRM: signals');
+      if (s.drm) sub = (sub ? sub + ' · ' : '') + (s.drmCaptureArmed ? 'DRM: bg capture' : 'DRM');
       if (s.queue && s.queue.pending) sub = (sub ? sub + ' · ' : '') + s.queue.pending + ' queued';
     }
     return { label, sub };
