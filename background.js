@@ -421,9 +421,22 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
       },
       body: JSON.stringify({
         model: ollamaModel,
-        prompt: prompt,
+        // Qwen3 reads `/no_think` as a control token to skip its reasoning
+        // block; other model families would just see it as literal prompt text,
+        // so only append it for Qwen.
+        prompt: /qwen/i.test(ollamaModel) ? prompt + ' /no_think' : prompt,
         images: [base64Image],
-        stream: false
+        stream: false,
+        // Disable chain-of-thought for models that support it (Qwen3 etc.) —
+        // the reasoning block was adding ~6s per frame. No-op for Gemma/LLaVA.
+        think: false,
+        // Keep the model resident between checks so it isn't reloaded each call.
+        keep_alive: '30m',
+        options: {
+          num_predict: 4,    // response is a single word (true/false)
+          temperature: 0,    // deterministic classification
+          num_ctx: 4096      // headroom for a full-res frame's vision tokens
+        }
       }),
       signal: controller.signal
     });
@@ -450,14 +463,16 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     
     const result = data.response.trim().toLowerCase();
     console.log('[Football Ad Muter Background] Parsed result:', `"${result}"`);
-    
-    // Parse the response and return full details for logging
+
+    // Parse the response and return full details for logging. Match the token
+    // anywhere rather than requiring an exact string, so a model that adds
+    // stray whitespace/punctuation still classifies instead of going inconclusive.
     let isGameplay = null;
-    
-    if (result === 'true') {
+
+    if (/\btrue\b/.test(result)) {
       console.log('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
       isGameplay = true;
-    } else if (result === 'false') {
+    } else if (/\bfalse\b/.test(result)) {
       console.log('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
       isGameplay = false;
     } else {

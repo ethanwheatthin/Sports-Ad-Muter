@@ -1770,3 +1770,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   return false; // Synchronous response
 });
+
+// Keep the popup (toolbar or popped-out window) in sync when monitoring is
+// toggled elsewhere — the on-page FAB, content.js, or the other window all
+// write isEnabled / monitoredTabId to chrome.storage.sync.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'sync') return;
+
+  if (changes.isEnabled) {
+    const enabled = !!changes.isEnabled.newValue;
+    if (enabled !== isMonitoring) {
+      isMonitoring = enabled;
+      console.log('[Football Ad Muter Popup] isEnabled changed externally:', enabled);
+      updateUI();
+    }
+  }
+
+  if (changes.monitoredTabId) {
+    monitoredTabId = changes.monitoredTabId.newValue || null;
+    setCurrentTabName();
+    updateVideoLockStatus();
+  }
+});
