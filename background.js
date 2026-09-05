@@ -243,13 +243,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     apiMetrics.totalRequests++;
     apiMetrics.lastRequestTime = Date.now();
     
-    // Get custom prompt and model from storage, or use defaults
-    chrome.storage.sync.get(['customPrompt', 'ollamaModel'], (storage) => {
+    // Get custom prompt, model and URL from storage, or use defaults.
+    // Storage is the source of truth so a stale content-script value can't
+    // override the URL the user configured and tested in the popup.
+    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl'], (storage) => {
       const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
       const ollamaModel = storage.ollamaModel || 'qwen3.5:0.8b';
+      let ollamaUrl = storage.ollamaUrl || request.ollamaUrl || 'http://localhost:11434';
+      ollamaUrl = ollamaUrl.replace(/\/+$/, ''); // trim trailing slash
+      console.log('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
 
       // Handle async operation properly
-      analyzeWithOllama(request.base64Image, request.ollamaUrl, customPrompt, ollamaModel)
+      analyzeWithOllama(request.base64Image, ollamaUrl, customPrompt, ollamaModel)
         .then(analysisResult => {
         console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
         
@@ -404,13 +409,14 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    // Use fetch with mode: 'cors' explicitly
+    // NOTE: use a "simple" Content-Type (text/plain) so the browser does NOT
+    // send a CORS preflight OPTIONS. Ollama parses the JSON body regardless of
+    // Content-Type, and many Ollama setups don't answer the preflight -> the
+    // POST would fail with "Failed to fetch" even though a plain GET works.
     const response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
-      mode: 'cors',
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Content-Type': 'text/plain;charset=UTF-8'
       },
       body: JSON.stringify({
         model: ollamaModel,
@@ -476,9 +482,15 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     });
     
     // Return error details for logging
+    let friendly = error.message;
+    if (error.name === 'AbortError') {
+      friendly = `Ollama timed out after 30s (${ollamaUrl})`;
+    } else if (/failed to fetch|networkerror|load failed/i.test(error.message || '')) {
+      friendly = `Cannot reach Ollama at ${ollamaUrl} — check it's running and started with OLLAMA_ORIGINS=* (or chrome-extension://*)`;
+    }
     return {
       result: null,
-      error: error.message,
+      error: friendly,
       processingTime: processingTime
     };
   }
