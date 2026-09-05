@@ -751,12 +751,21 @@ if (refreshModelsBtn) {
   });
 }
 
-// Reload models when URL field loses focus
+// Reload models + persist when the URL field loses focus, so a URL that was
+// typed and tested is actually used even if the user never hits Save.
 const ollamaUrlInput = document.getElementById('ollamaUrl');
 if (ollamaUrlInput) {
   ollamaUrlInput.addEventListener('blur', () => {
-    const url = ollamaUrlInput.value || 'http://localhost:11434';
+    const url = (ollamaUrlInput.value || 'http://localhost:11434').trim().replace(/\/+$/, '');
     const currentModel = document.getElementById('ollamaModel').value;
+    chrome.storage.sync.set({ ollamaUrl: url }, () => {
+      console.log('[Football Ad Muter Popup] Ollama URL persisted on blur:', url);
+      getTargetTab((tab) => {
+        if (tab) {
+          chrome.tabs.sendMessage(tab.id, { action: 'updateSettings', ollamaUrl: url }, () => void chrome.runtime.lastError);
+        }
+      });
+    });
     loadModels(url, currentModel);
   });
 }
@@ -1587,7 +1596,9 @@ function setupFrameCardListeners() {
 
 function displayActivityLogs(logs) {
   const container = document.getElementById('activityContainer');
-  
+  if (!container) return;
+  logs = Array.isArray(logs) ? logs : [];
+
   if (logs.length === 0) {
     container.innerHTML = '<div class="no-logs">No activity yet. Start monitoring to see live updates.</div>';
     return;

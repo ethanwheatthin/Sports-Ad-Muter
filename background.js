@@ -250,7 +250,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
       const ollamaModel = storage.ollamaModel || 'qwen3.5:0.8b';
       let ollamaUrl = storage.ollamaUrl || request.ollamaUrl || 'http://localhost:11434';
-      ollamaUrl = ollamaUrl.replace(/\/+$/, ''); // trim trailing slash
+      ollamaUrl = ollamaUrl.trim().replace(/\/+$/, ''); // trim trailing slash
+      if (ollamaUrl.includes('/ollama/api')) ollamaUrl = 'http://localhost:11434';
       console.log('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
 
       // Handle async operation properly
