@@ -1,5 +1,8 @@
 // Background service worker
 
+// Open the side panel when the toolbar icon is clicked (instead of a popup).
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
 // Default AI prompt
 const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
 
@@ -27,6 +30,39 @@ FALSE = Everything else:
 • Halftime entertainment  
 • Non-sports content
 • Static graphics/promos
+
+DECISION RULE: When uncertain → false
+
+RESPOND: true OR false (nothing else)`;
+
+// American Sports (NFL, MLB, NBA, NHL) prompt — kept in sync with
+// SPORT_MODE_PROMPTS.american in popup.js; used as the default sport mode.
+const AMERICAN_SPORTS_PROMPT = `AMERICAN SPORTS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = American sports broadcast content:
+• Football field with players (NFL/college/arena)
+• Baseball diamond — pitcher, batter, fielders
+• Basketball court with players
+• Hockey rink with skaters, puck, sticks
+• Team uniforms, helmets, jerseys, pads
+• Scoreboard or score overlay
+• Coaches and players on sideline/bench/dugout
+• Studio analysts at desk
+• Replays with graphics or telestrator
+• Crowd in stadium or arena
+• Press conferences and interviews
+• Draft, trade, or signing coverage
+• Stat overlays and graphics
+• Pregame/postgame shows
+
+FALSE = Everything else:
+• Commercials and ads
+• Halftime entertainment performances
+• Non-sports content
+• Product commercials of any kind
 
 DECISION RULE: When uncertain → false
 
@@ -135,9 +171,9 @@ chrome.runtime.onInstalled.addListener(() => {
     ollamaUrl: 'http://localhost:11434',
     checkInterval: 10000, // 10 seconds default (can be set up to 60 seconds)
     isEnabled: false,
-    customPrompt: DEFAULT_PROMPT,
+    customPrompt: AMERICAN_SPORTS_PROMPT,
     ollamaModel: 'qwen3.5:0.8b',
-    sportMode: 'general'
+    sportMode: 'american'
   });
   
   console.log('[Football Ad Muter Background] Extension installed');
@@ -200,12 +236,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'openSettingsWindow') {
-    chrome.windows.create({
-      url: chrome.runtime.getURL('popup.html'),
-      type: 'popup',
-      width: 420,
-      height: 640
-    }, () => void chrome.runtime.lastError);
+    const tab = sender && sender.tab;
+    if (tab && tab.id != null) {
+      chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
+        console.error('[Football Ad Muter Background] Failed to open side panel:', err);
+      });
+    }
     sendResponse({ ok: true });
     return false;
   }

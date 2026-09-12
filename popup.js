@@ -81,7 +81,6 @@ document.addEventListener('DOMContentLoaded', setCurrentTabName);
 let isMonitoring = false;
 let refreshInterval = null;
 let monitoredTabId = null;
-let popOutWindowId = null; // Track the pop-out window ID
 
 // Track expanded state of activity and log entries
 const expandedActivityEntries = new Set();
@@ -492,6 +491,35 @@ FALSE = Everything else:
 
 DECISION RULE: When uncertain → false
 
+RESPOND: true OR false (nothing else)`,
+
+  news: `NEWS BROADCAST DETECTOR
+
+INPUT: Image
+OUTPUT: true OR false (only)
+
+TRUE = Active news segment content:
+• Anchor(s) at the news desk talking to camera
+• Reporter live in the field or on-location
+• Interview with a guest, official, or witness
+• B-roll/package footage illustrating the story
+• Lower-third chyron with headline, name, or ticker over a live segment
+• Studio panel discussion or roundtable
+• Weather segment with map or forecaster
+• Traffic report with map or camera feed
+• Press conference or briefing coverage
+• Breaking news graphic/banner over live coverage
+• Sports or entertainment news segment within the broadcast
+
+FALSE = Everything else:
+• Commercials and product ads
+• Network/station promos for other shows
+• Sponsor cards or "brought to you by" bumpers
+• Show open/bumper with theme music and no active reporting
+• Non-news content
+
+DECISION RULE: When uncertain → false
+
 RESPOND: true OR false (nothing else)`
 };
 
@@ -554,7 +582,7 @@ async function loadModels(ollamaUrl, savedModel) {
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt', 'ollamaModel', 'sportMode', 'monitoredTabId', 'popOutWindowId'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt', 'ollamaModel', 'sportMode', 'monitoredTabId'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
 
   // Set existing settings
@@ -565,7 +593,7 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLog
   loadModels(savedOllamaUrl, result.ollamaModel || '');
 
   // Restore sport mode dropdown
-  const savedMode = result.sportMode || 'general';
+  const savedMode = result.sportMode || 'american';
   const sportModeSelect = document.getElementById('sportMode');
   if (sportModeSelect) sportModeSelect.value = savedMode;
 
@@ -578,8 +606,7 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLog
   
   isMonitoring = result.isEnabled || false;
   monitoredTabId = result.monitoredTabId || null;
-  popOutWindowId = result.popOutWindowId || null;
-  console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring, 'Tab ID:', monitoredTabId, 'Window ID:', popOutWindowId);
+  console.log('[Football Ad Muter Popup] Monitoring state:', isMonitoring, 'Tab ID:', monitoredTabId);
   
   // Check and display DRM status if present
   if (result.drmStatus && result.drmStatus.isDrm) {
@@ -751,64 +778,46 @@ if (refreshModelsBtn) {
   });
 }
 
-// Reload models + persist when the URL field loses focus, so a URL that was
-// typed and tested is actually used even if the user never hits Save.
+// Reload the model list when the URL field loses focus (saving itself is
+// handled by the generic auto-save 'change' listener further down).
 const ollamaUrlInput = document.getElementById('ollamaUrl');
 if (ollamaUrlInput) {
   ollamaUrlInput.addEventListener('blur', () => {
     const url = (ollamaUrlInput.value || 'http://localhost:11434').trim().replace(/\/+$/, '');
     const currentModel = document.getElementById('ollamaModel').value;
-    chrome.storage.sync.set({ ollamaUrl: url }, () => {
-      console.log('[Football Ad Muter Popup] Ollama URL persisted on blur:', url);
-      getTargetTab((tab) => {
-        if (tab) {
-          chrome.tabs.sendMessage(tab.id, { action: 'updateSettings', ollamaUrl: url }, () => void chrome.runtime.lastError);
-        }
-      });
-    });
     loadModels(url, currentModel);
   });
 }
 
-// Save settings
-document.getElementById('saveBtn').addEventListener('click', () => {
-  const ollamaUrl = document.getElementById('ollamaUrl').value;
+// Read + validate the settings fields. Returns { settings } or { error }.
+function collectSettings() {
+  const ollamaUrl = (document.getElementById('ollamaUrl').value || 'http://localhost:11434').trim().replace(/\/+$/, '');
   const customPrompt = document.getElementById('customPrompt').value.trim();
-  
-  // Convert seconds to milliseconds for storage
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
-  
-  // Validate check interval (1-60 seconds)
-  if (checkIntervalSeconds < 1 || checkIntervalSeconds > 60) {
-    alert('Check interval must be between 1 and 60 seconds');
-    return;
-  }
-  
-  // Validate prompt is not empty
-  if (!customPrompt) {
-    alert('Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.');
-    return;
-  }
-  
-  const checkInterval = checkIntervalSeconds * 1000;
-  const ollamaModel = document.getElementById('ollamaModel').value;
-  const sportMode = document.getElementById('sportMode').value;
 
-  const settings = {
-    ollamaUrl: ollamaUrl,
-    checkInterval: checkInterval,
-    customPrompt: customPrompt,
-    ollamaModel: ollamaModel,
-    sportMode: sportMode
+  if (isNaN(checkIntervalSeconds) || checkIntervalSeconds < 1 || checkIntervalSeconds > 60) {
+    return { error: 'Check interval must be between 1 and 60 seconds' };
+  }
+  if (!customPrompt) {
+    return { error: 'Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.' };
+  }
+
+  return {
+    settings: {
+      ollamaUrl: ollamaUrl,
+      checkInterval: checkIntervalSeconds * 1000,
+      customPrompt: customPrompt,
+      ollamaModel: document.getElementById('ollamaModel').value,
+      sportMode: document.getElementById('sportMode').value
+    }
   };
-  
-  console.log('[Football Ad Muter Popup] Saving settings:', { 
-    ...settings, 
-    checkInterval: checkInterval + 'ms (' + checkIntervalSeconds + 's)'
-  });
-  
+}
+
+// Write settings to storage and push them to the content script. Does not
+// touch monitoring state — callers decide whether to stop/resume around it.
+function persistSettings(settings, callback) {
+  console.log('[Football Ad Muter Popup] Saving settings:', settings);
   chrome.storage.sync.set(settings, () => {
-    // Update content script with new settings
     getTargetTab((tab) => {
       if (tab) {
         console.log('[Football Ad Muter Popup] Sending settings update to content script on tab:', tab.id);
@@ -825,32 +834,91 @@ document.getElementById('saveBtn').addEventListener('click', () => {
       } else {
         console.log('[Football Ad Muter Popup] No suitable tab found for settings update');
       }
+      callback();
     });
-    
-    // Show feedback
-    const saveBtn = document.getElementById('saveBtn');
-    const originalText = saveBtn.textContent;
-    saveBtn.textContent = 'Saved!';
-    setTimeout(() => {
-      saveBtn.textContent = originalText;
-    }, 1500);
   });
+}
+
+function showAutoSaveStatus(kind, text) {
+  const statusDiv = document.getElementById('autoSaveStatus');
+  if (!statusDiv) return;
+  statusDiv.className = 'connection-status ' + kind;
+  statusDiv.textContent = text;
+  statusDiv.style.display = 'block';
+  if (kind === 'success') {
+    clearTimeout(showAutoSaveStatus._hideTimer);
+    showAutoSaveStatus._hideTimer = setTimeout(() => {
+      statusDiv.style.display = 'none';
+    }, 2500);
+  }
+}
+
+// Save the current settings fields. If monitoring is active on a tab, stop
+// it first, save, confirm the write, then resume monitoring on that same
+// tab — so a changed prompt/model/interval never applies mid-flight.
+function saveSettings() {
+  const { error, settings } = collectSettings();
+  if (error) {
+    showAutoSaveStatus('error', '❌ ' + error);
+    return;
+  }
+
+  if (isMonitoring) {
+    showAutoSaveStatus('testing', 'Settings changed — pausing monitoring to apply...');
+    getTargetTab((tab) => {
+      performStop(tab, () => {
+        persistSettings(settings, () => {
+          showAutoSaveStatus('testing', 'Settings saved — resuming monitoring...');
+          performStart(tab, (ok) => {
+            if (ok) {
+              showAutoSaveStatus('success', '✅ Settings saved. Monitoring resumed.');
+            } else {
+              showAutoSaveStatus('error', '❌ Settings saved, but monitoring could not resume automatically. Click Start to resume.');
+            }
+          });
+        });
+      });
+    });
+  } else {
+    persistSettings(settings, () => {
+      showAutoSaveStatus('success', '✅ Settings saved.');
+    });
+  }
+}
+
+// Debounce so a burst of related changes (e.g. picking a sport mode, which
+// also rewrites the prompt) collapses into a single stop/save/resume cycle.
+let autoSaveDebounceTimer = null;
+function scheduleAutoSave() {
+  clearTimeout(autoSaveDebounceTimer);
+  autoSaveDebounceTimer = setTimeout(saveSettings, 400);
+}
+
+// Manual save button — same path as auto-save, immediate.
+document.getElementById('saveBtn').addEventListener('click', () => {
+  clearTimeout(autoSaveDebounceTimer);
+  saveSettings();
 });
 
-// Sport mode change — auto-fill prompt with mode preset
+// Auto-save whenever a settings field changes.
+['ollamaUrl', 'checkInterval', 'ollamaModel', 'customPrompt'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', scheduleAutoSave);
+});
+
+// Sport mode change — auto-fill prompt with mode preset, then auto-save.
 const sportModeSelect = document.getElementById('sportMode');
 if (sportModeSelect) {
   sportModeSelect.addEventListener('change', () => {
     const mode = sportModeSelect.value;
-    if (mode === 'custom') {
-      // Leave the textarea as-is for manual editing
-      return;
+    if (mode !== 'custom') {
+      const preset = SPORT_MODE_PROMPTS[mode];
+      if (preset) {
+        document.getElementById('customPrompt').value = preset;
+        console.log('[Football Ad Muter Popup] Sport mode changed to:', mode);
+      }
     }
-    const preset = SPORT_MODE_PROMPTS[mode];
-    if (preset) {
-      document.getElementById('customPrompt').value = preset;
-      console.log('[Football Ad Muter Popup] Sport mode changed to:', mode);
-    }
+    scheduleAutoSave();
   });
 }
 
@@ -862,8 +930,108 @@ document.getElementById('resetPromptBtn').addEventListener('click', () => {
   if (confirm(`Reset the prompt to the "${modeName}" default? This will overwrite any manual edits.`)) {
     document.getElementById('customPrompt').value = preset;
     console.log('[Football Ad Muter Popup] Prompt reset to mode default:', mode);
+    scheduleAutoSave();
   }
 });
+
+// Send the 'start' command to a tab and wire up the resulting UI/auto-lock.
+// Shared by the Start button and the auto-save stop/resume cycle.
+function performStart(tab, callback) {
+  if (!tab) {
+    callback(false, 'no-tab');
+    return;
+  }
+  // DRM frames are captured via captureVisibleTab while the tab is focused
+  // (fullscreen-safe). Background vision capture is opt-in via the
+  // "Enable Background Capture" button, since a live capture stream blocks
+  // the page from entering true fullscreen.
+  console.log('[Football Ad Muter Popup] Sending start command to tab:', tab.id);
+  chrome.tabs.sendMessage(tab.id, { action: 'start' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter Popup] Error starting monitoring:', chrome.runtime.lastError);
+      callback(false, chrome.runtime.lastError.message);
+      return;
+    }
+    console.log('[Football Ad Muter Popup] Start response:', response);
+    if (response && response.status === 'started') {
+      isMonitoring = true;
+      monitoredTabId = tab.id;
+      chrome.storage.sync.set({ isEnabled: true, monitoredTabId: tab.id });
+      updateUI();
+      console.log('[Football Ad Muter Popup] Monitoring started successfully on tab:', tab.id);
+
+      // Automatically lock to the video
+      console.log('[Football Ad Muter Popup] Auto-locking to video...');
+      setTimeout(() => {
+        chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (pingResponse) => {
+          if (chrome.runtime.lastError || !pingResponse || pingResponse.status !== 'pong') {
+            console.error('[Football Ad Muter Popup] Cannot auto-lock: content script not responding');
+            return;
+          }
+
+          chrome.tabs.sendMessage(tab.id, { action: 'lockVideo' }, (lockResponse) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Football Ad Muter Popup] Error auto-locking video:', chrome.runtime.lastError);
+              return;
+            }
+
+            if (lockResponse && lockResponse.status === 'locked' && lockResponse.found) {
+              console.log('[Football Ad Muter Popup] Video auto-locked successfully');
+              updateVideoLockUI(true);
+            } else {
+              console.log('[Football Ad Muter Popup] No video found to auto-lock');
+            }
+          });
+        });
+      }, 500);
+      callback(true);
+    } else {
+      callback(false, 'unexpected-response');
+    }
+  });
+}
+
+// Send the 'stop' command to a tab and settle local/stored state. Shared by
+// the Stop button and the auto-save stop/resume cycle.
+function performStop(tab, callback) {
+  if (!tab) {
+    console.error('[Football Ad Muter Popup] No suitable tab found for stop command');
+    isMonitoring = false;
+    monitoredTabId = null;
+    chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
+    updateUI();
+    callback(true);
+    return;
+  }
+  console.log('[Football Ad Muter Popup] Sending stop command to tab:', tab.id);
+  chrome.tabs.sendMessage(tab.id, { action: 'stop' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Football Ad Muter Popup] Error stopping monitoring:', chrome.runtime.lastError);
+      // Still update UI since the error might mean content script isn't running anyway
+      isMonitoring = false;
+      monitoredTabId = null;
+      chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
+      updateUI();
+      callback(true);
+      return;
+    }
+    console.log('[Football Ad Muter Popup] Stop response:', response);
+    if (response && response.status === 'stopped') {
+      isMonitoring = false;
+      monitoredTabId = null;
+      chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
+      // Clear DRM status when monitoring stops
+      chrome.storage.sync.set({ drmStatus: null });
+      document.getElementById('drmStatusSection').style.display = 'none';
+      updateUI();
+      updateVideoLockUI(false);
+      console.log('[Football Ad Muter Popup] Monitoring stopped successfully');
+      callback(true);
+    } else {
+      callback(false, 'unexpected-response');
+    }
+  });
+}
 
 // Start monitoring
 document.getElementById('startBtn').addEventListener('click', () => {
@@ -871,58 +1039,18 @@ document.getElementById('startBtn').addEventListener('click', () => {
   // Clear DRM status when starting fresh
   chrome.storage.sync.set({ drmStatus: null });
   document.getElementById('drmStatusSection').style.display = 'none';
-  
+
   getTargetTab((tab) => {
-    if (tab) {
-      // DRM frames are captured via captureVisibleTab while the tab is focused
-      // (fullscreen-safe). Background vision capture is opt-in via the
-      // "Enable Background Capture" button, since a live capture stream blocks
-      // the page from entering true fullscreen.
-      console.log('[Football Ad Muter Popup] Sending start command to tab:', tab.id);
-      chrome.tabs.sendMessage(tab.id, { action: 'start' }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Football Ad Muter Popup] Error starting monitoring:', chrome.runtime.lastError);
-          alert('Error: Cannot start monitoring. Make sure you are on a webpage with video content.');
-          return;
-        }
-        console.log('[Football Ad Muter Popup] Start response:', response);
-        if (response && response.status === 'started') {
-          isMonitoring = true;
-          monitoredTabId = tab.id;
-          chrome.storage.sync.set({ isEnabled: true, monitoredTabId: tab.id });
-          updateUI();
-          console.log('[Football Ad Muter Popup] Monitoring started successfully on tab:', tab.id);
-          
-          // Automatically lock to the video
-          console.log('[Football Ad Muter Popup] Auto-locking to video...');
-          setTimeout(() => {
-            chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (pingResponse) => {
-              if (chrome.runtime.lastError || !pingResponse || pingResponse.status !== 'pong') {
-                console.error('[Football Ad Muter Popup] Cannot auto-lock: content script not responding');
-                return;
-              }
-              
-              chrome.tabs.sendMessage(tab.id, { action: 'lockVideo' }, (lockResponse) => {
-                if (chrome.runtime.lastError) {
-                  console.error('[Football Ad Muter Popup] Error auto-locking video:', chrome.runtime.lastError);
-                  return;
-                }
-                
-                if (lockResponse && lockResponse.status === 'locked' && lockResponse.found) {
-                  console.log('[Football Ad Muter Popup] Video auto-locked successfully');
-                  updateVideoLockUI(true);
-                } else {
-                  console.log('[Football Ad Muter Popup] No video found to auto-lock');
-                }
-              });
-            });
-          }, 500);
-        }
-      });
-    } else {
+    if (!tab) {
       console.error('[Football Ad Muter Popup] No suitable tab found for start command');
       alert('Error: Cannot find a webpage to monitor. Please navigate to a page with video content.');
+      return;
     }
+    performStart(tab, (ok) => {
+      if (!ok) {
+        alert('Error: Cannot start monitoring. Make sure you are on a webpage with video content.');
+      }
+    });
   });
 });
 
@@ -930,39 +1058,7 @@ document.getElementById('startBtn').addEventListener('click', () => {
 document.getElementById('stopBtn').addEventListener('click', () => {
   console.log('[Football Ad Muter Popup] Stop button clicked');
   getTargetTab((tab) => {
-    if (tab) {
-      console.log('[Football Ad Muter Popup] Sending stop command to tab:', tab.id);
-      chrome.tabs.sendMessage(tab.id, { action: 'stop' }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Football Ad Muter Popup] Error stopping monitoring:', chrome.runtime.lastError);
-          // Still update UI since the error might mean content script isn't running anyway
-          isMonitoring = false;
-          monitoredTabId = null;
-          chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
-          updateUI();
-          return;
-        }
-        console.log('[Football Ad Muter Popup] Stop response:', response);
-        if (response && response.status === 'stopped') {
-          isMonitoring = false;
-          monitoredTabId = null;
-          chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
-          // Clear DRM status when monitoring stops
-          chrome.storage.sync.set({ drmStatus: null });
-          document.getElementById('drmStatusSection').style.display = 'none';
-          updateUI();
-          updateVideoLockUI(false);
-          console.log('[Football Ad Muter Popup] Monitoring stopped successfully');
-        }
-      });
-    } else {
-      console.error('[Football Ad Muter Popup] No suitable tab found for stop command');
-      // Still clear the monitoring state
-      isMonitoring = false;
-      monitoredTabId = null;
-      chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
-      updateUI();
-    }
+    performStop(tab, () => {});
   });
 });
 
@@ -1004,6 +1100,70 @@ if (clearFramesBtn) {
   });
 }
 
+// Commands to start Ollama with CORS enabled, per OS/shell.
+function getOllamaStartCommands() {
+  const ua = navigator.userAgent || '';
+  if (ua.includes('Windows')) {
+    return [
+      { label: 'PowerShell (blue "PS" prompt)', command: '$env:OLLAMA_ORIGINS="*"; ollama serve' },
+      { label: 'Command Prompt / cmd.exe only', command: 'set OLLAMA_ORIGINS=* && ollama serve' }
+    ];
+  }
+  return [
+    { label: 'Terminal', command: 'OLLAMA_ORIGINS=* ollama serve' }
+  ];
+}
+
+function renderStartOllamaHint(show) {
+  const hint = document.getElementById('startOllamaHint');
+  if (!hint) return;
+  if (!show) {
+    hint.style.display = 'none';
+    return;
+  }
+
+  const container = document.getElementById('startOllamaCommands');
+  container.innerHTML = '';
+
+  getOllamaStartCommands().forEach(({ label, command }) => {
+    const group = document.createElement('div');
+    group.className = 'ollama-cmd-group';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'ollama-cmd-label';
+    labelEl.textContent = label;
+
+    const row = document.createElement('div');
+    row.className = 'ollama-cmd-row';
+
+    const codeEl = document.createElement('code');
+    codeEl.className = 'ollama-cmd-code';
+    codeEl.textContent = command;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'ollama-cmd-copy-btn';
+    copyBtn.type = 'button';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(command).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      }).catch(() => {
+        copyBtn.textContent = 'Failed';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      });
+    });
+
+    row.appendChild(codeEl);
+    row.appendChild(copyBtn);
+    group.appendChild(labelEl);
+    group.appendChild(row);
+    container.appendChild(group);
+  });
+
+  hint.style.display = 'block';
+}
+
 // Test API connection
 const testApiBtn = document.getElementById('testApiBtn');
 if (testApiBtn) {
@@ -1019,6 +1179,7 @@ if (testApiBtn) {
     statusDiv.style.display = 'block';
     statusDiv.className = 'connection-status testing';
     statusDiv.textContent = 'Testing connection to Ollama API...';
+    renderStartOllamaHint(false);
     
     console.log('[Football Ad Muter Popup] Sending API test request to background script');
     
@@ -1037,6 +1198,7 @@ if (testApiBtn) {
         
         if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
           statusDiv.textContent = '❌ Cannot connect to Ollama. Make sure it\'s running and CORS is enabled.';
+          renderStartOllamaHint(true);
         } else {
           statusDiv.textContent = `❌ Connection failed: ${response.error}`;
         }
@@ -1049,6 +1211,7 @@ if (testApiBtn) {
         } else {
           statusDiv.className = 'connection-status error';
           statusDiv.textContent = response.result.message || '❌ Connection test failed';
+          renderStartOllamaHint(true);
         }
       } else {
         statusDiv.className = 'connection-status error';
@@ -1059,9 +1222,10 @@ if (testApiBtn) {
       testBtn.disabled = false;
       testBtn.textContent = 'Test API Connection';
       
-      // Hide status after 10 seconds
+      // Hide status (and hint, if shown) after 10 seconds
       setTimeout(() => {
         statusDiv.style.display = 'none';
+        renderStartOllamaHint(false);
       }, 10000);
     });
   });
@@ -1385,87 +1549,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Check video lock status on load
   updateVideoLockStatus();
-  
-  // Wire pop-out button to toggle between window and popup modes
-  const popOutBtn = document.getElementById('popOutBtn');
-  if (popOutBtn) {
-    // Check if we're in a standalone window (not a popup)
-    chrome.windows.getCurrent((currentWindow) => {
-      const isStandaloneWindow = currentWindow.type === 'popup';
-      
-      // Update button appearance based on context
-      if (isStandaloneWindow) {
-        popOutBtn.textContent = '✕';
-        popOutBtn.title = 'Close window';
-      } else {
-        popOutBtn.textContent = '⧉';
-        popOutBtn.title = 'Open in new window';
-      }
-      
-      popOutBtn.addEventListener('click', () => {
-        console.log('[Football Ad Muter Popup] Pop-out button clicked, current window type:', currentWindow.type);
-        
-        if (isStandaloneWindow) {
-          // We're in a standalone window - close it
-          console.log('[Football Ad Muter Popup] Closing standalone window');
-          chrome.storage.sync.set({ popOutWindowId: null }, () => {
-            window.close();
-          });
-        } else {
-          // We're in the toolbar popup - open/focus standalone window
-          // First check if window already exists
-          if (popOutWindowId) {
-            chrome.windows.get(popOutWindowId, (existingWindow) => {
-              if (chrome.runtime.lastError || !existingWindow) {
-                // Window doesn't exist anymore, create new one
-                createPopOutWindow();
-              } else {
-                // Window exists, focus it
-                console.log('[Football Ad Muter Popup] Focusing existing window:', popOutWindowId);
-                chrome.windows.update(popOutWindowId, { focused: true });
-                window.close(); // Close the popup
-              }
-            });
-          } else {
-            // No existing window, create new one
-            createPopOutWindow();
-          }
-        }
-      });
-    });
-  }
 });
-
-// Helper function to create pop-out window
-function createPopOutWindow() {
-  console.log('[Football Ad Muter Popup] Creating new pop-out window');
-  chrome.windows.create({
-    url: chrome.runtime.getURL('popup.html'),
-    type: 'popup',
-    width: 500,
-    height: 800
-  }, (newWindow) => {
-    if (newWindow) {
-      console.log('[Football Ad Muter Popup] Opened in new window:', newWindow.id);
-      // Store the window ID
-      chrome.storage.sync.set({ popOutWindowId: newWindow.id });
-      popOutWindowId = newWindow.id;
-      
-      // Listen for window close to clean up stored ID
-      chrome.windows.onRemoved.addListener(function windowClosedListener(windowId) {
-        if (windowId === popOutWindowId) {
-          console.log('[Football Ad Muter Popup] Pop-out window closed');
-          chrome.storage.sync.set({ popOutWindowId: null });
-          popOutWindowId = null;
-          chrome.windows.onRemoved.removeListener(windowClosedListener);
-        }
-      });
-      
-      // Close the toolbar popup
-      window.close();
-    }
-  });
-}
 
 // Removed old analysis logs functions - now using displayRecentFrames() instead
 // function loadLogs() {

@@ -56,14 +56,15 @@
 }
 
 body {
-  width: 400px;
+  width: 100%;
+  min-width: 320px;
   padding: 0;
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   background: var(--surface-2);
   color: var(--text-primary);
-  max-height: 640px;
+  height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
   line-height: 1.5;
@@ -110,29 +111,6 @@ h1::before {
   background: var(--brand-primary);
   box-shadow: 0 0 6px var(--brand-primary);
   flex-shrink: 0;
-}
-
-.expand-toggle-btn {
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.8);
-  font-size: 13px;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-}
-
-.expand-toggle-btn:hover {
-  background: rgba(255,255,255,0.2);
-  border-color: rgba(255,255,255,0.35);
-  color: #fff;
 }
 
 /* ========================================
@@ -462,6 +440,61 @@ button:active {
   background: var(--info-light);
   color: #1e40af;
   border-left-color: var(--info);
+}
+
+.start-ollama-hint {
+  background: var(--info-light);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-top: 8px;
+}
+
+.start-ollama-hint .info {
+  color: #1e40af;
+  margin: 0 0 6px;
+}
+
+.ollama-cmd-group {
+  margin-top: 8px;
+}
+
+.ollama-cmd-group:first-of-type {
+  margin-top: 0;
+}
+
+.ollama-cmd-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.ollama-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ollama-cmd-code {
+  flex: 1;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.ollama-cmd-copy-btn {
+  flex-shrink: 0;
+  min-width: auto;
+  padding: 4px 10px;
+  font-size: 11px;
 }
 
 /* ========================================

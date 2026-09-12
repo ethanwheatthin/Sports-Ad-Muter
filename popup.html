@@ -10,7 +10,6 @@
   <!-- Header -->
   <div class="header-container">
     <h1>S.A.M &mdash; Sports Ad Muter</h1>
-    <button id="popOutBtn" class="expand-toggle-btn" title="Open in new window">⧉</button>
   </div>
 
   <div class="popup-body">
@@ -33,6 +32,15 @@
         </div>
         <div id="modelStatus"></div>
       </div>
+
+      <div class="button-group" style="margin-top: 10px;">
+        <button id="testApiBtn" class="test-btn">Test API Connection</button>
+      </div>
+      <div id="connectionStatus" class="connection-status" style="display: none;"></div>
+      <div id="startOllamaHint" class="start-ollama-hint" style="display: none;">
+        <div class="info">Ollama doesn't seem to be running. Start it with:</div>
+        <div id="startOllamaCommands"></div>
+      </div>
     </div>
 
     <!-- Sampling -->
@@ -53,7 +61,7 @@
         <label for="sportMode" style="margin-top: 8px;">Sport Mode</label>
         <select id="sportMode" style="margin-bottom: 12px;">
           <option value="general">General / Auto</option>
-          <option value="american">American Sports (NFL, MLB, NBA, NHL)</option>
+          <option value="american" selected>American Sports (NFL, MLB, NBA, NHL)</option>
           <option value="golf">Golf</option>
           <option value="esports">Esports</option>
           <option value="aquatics">Aquatics / Swimming</option>
@@ -62,6 +70,7 @@
           <option value="motorsports">Motorsports (F1, NASCAR, MotoGP)</option>
           <option value="tennis">Tennis</option>
           <option value="winter">Winter Sports</option>
+          <option value="news">News Broadcasts</option>
           <option value="custom">Custom (manual edit only)</option>
         </select>
 
@@ -76,16 +85,16 @@
     </details>
 
     <!-- Save -->
-    <button class="save-btn" id="saveBtn">Save Settings</button>
+    <div class="info" style="margin-bottom: 4px;">Settings are saved automatically as you change them.</div>
+    <button class="save-btn" id="saveBtn">Save Now</button>
+    <div id="autoSaveStatus" class="connection-status" style="display: none;"></div>
 
-    <!-- API / Video Controls -->
+    <!-- Video Controls -->
     <div class="section" style="margin-top: 8px;">
       <div class="section-title">Controls</div>
       <div class="button-group">
-        <button id="testApiBtn" class="test-btn">Test API Connection</button>
         <button id="resetVideoBtn" class="reset-btn">Reset Video Player</button>
       </div>
-      <div id="connectionStatus" class="connection-status" style="display: none;"></div>
     </div>
 
     <!-- Video Status -->
