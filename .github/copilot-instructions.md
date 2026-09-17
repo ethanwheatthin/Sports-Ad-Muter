@@ -22,8 +22,8 @@ This file gives an AI coding agent the concise, actionable knowledge needed to m
 
 **Project-Specific Conventions & Patterns**:
 - Storage:
-  - **Settings & activity logs:** use `chrome.storage.sync` (small items). Keys: `ollamaUrl`, `checkInterval`, `isEnabled`, `activityLogs`.
-  - **Analysis frames / LLM responses:** use `chrome.storage.local` and key `analysisLogs` since frames are large base64 blobs.
+  - **Settings:** use `chrome.storage.sync` (small items). Keys: `ollamaUrl`, `checkInterval`, `isEnabled`, `apiProvider`, `geminiApiKey`, `geminiModel`.
+  - **Activity logs / analysis frames / LLM responses:** use `chrome.storage.local`, keys `activityLogs` and `analysisLogs` — `chrome.storage.sync` caps each item at 8KB, which 100 log entries or a base64 frame blow past.
 - Messaging:
   - Popup ↔ Content: `chrome.tabs.sendMessage` (tab-scoped)
   - Content ↔ Background: `chrome.runtime.sendMessage` (background handles Ollama calls)

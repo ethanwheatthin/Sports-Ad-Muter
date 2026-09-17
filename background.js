@@ -168,7 +168,10 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onInstalled.addListener(() => {
   // Set default settings
   chrome.storage.sync.set({
+    apiProvider: 'ollama', // 'ollama' (local) or 'gemini' (cloud, free API key)
     ollamaUrl: 'http://localhost:11434',
+    geminiApiKey: '',
+    geminiModel: 'gemini-3.5-flash-lite',
     checkInterval: 10000, // 10 seconds default (can be set up to 60 seconds)
     isEnabled: false,
     customPrompt: AMERICAN_SPORTS_PROMPT,
@@ -279,19 +282,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     apiMetrics.totalRequests++;
     apiMetrics.lastRequestTime = Date.now();
     
-    // Get custom prompt, model and URL from storage, or use defaults.
-    // Storage is the source of truth so a stale content-script value can't
-    // override the URL the user configured and tested in the popup.
-    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl'], (storage) => {
+    // Get custom prompt, provider, and provider-specific settings from storage,
+    // or use defaults. Storage is the source of truth so a stale content-script
+    // value can't override what the user configured and tested in the popup.
+    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl', 'apiProvider', 'geminiApiKey', 'geminiModel'], (storage) => {
       const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
-      const ollamaModel = storage.ollamaModel || 'qwen3.5:0.8b';
-      let ollamaUrl = storage.ollamaUrl || request.ollamaUrl || 'http://localhost:11434';
-      ollamaUrl = ollamaUrl.trim().replace(/\/+$/, ''); // trim trailing slash
-      if (ollamaUrl.includes('/ollama/api')) ollamaUrl = 'http://localhost:11434';
-      console.log('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
+      const provider = storage.apiProvider || 'ollama';
+
+      let analysisPromise;
+      if (provider === 'gemini') {
+        console.log('[Football Ad Muter Background] Using Gemini model:', storage.geminiModel);
+        analysisPromise = analyzeWithGemini(request.base64Image, storage.geminiApiKey || '', customPrompt, storage.geminiModel || 'gemini-3.5-flash-lite');
+      } else {
+        const ollamaModel = storage.ollamaModel || 'qwen3.5:0.8b';
+        let ollamaUrl = storage.ollamaUrl || request.ollamaUrl || 'http://localhost:11434';
+        ollamaUrl = ollamaUrl.trim().replace(/\/+$/, ''); // trim trailing slash
+        if (ollamaUrl.includes('/ollama/api')) ollamaUrl = 'http://localhost:11434';
+        console.log('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
+        analysisPromise = analyzeWithOllama(request.base64Image, ollamaUrl, customPrompt, ollamaModel);
+      }
 
       // Handle async operation properly
-      analyzeWithOllama(request.base64Image, ollamaUrl, customPrompt, ollamaModel)
+      analysisPromise
         .then(analysisResult => {
         console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
         
@@ -350,10 +362,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'testApiConnection') {
-    console.log('[Football Ad Muter Background] API connection test requested');
-    
+    console.log('[Football Ad Muter Background] API connection test requested for provider:', request.provider);
+
     // Handle async operation properly
-    testOllamaConnection(request.ollamaUrl)
+    const testPromise = request.provider === 'gemini'
+      ? testGeminiConnection(request.geminiApiKey, request.geminiModel)
+      : testOllamaConnection(request.ollamaUrl);
+
+    testPromise
       .then(result => {
         console.log('[Football Ad Muter Background] API test complete:', result);
         sendResponse({ result: result, error: null });
@@ -362,7 +378,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('[Football Ad Muter Background] API test failed:', error);
         sendResponse({ result: null, error: error.message });
       });
-    
+
     return true; // Keep the message channel open for async response
   }
   
@@ -539,6 +555,158 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
       friendly = `Ollama timed out after 30s (${ollamaUrl})`;
     } else if (/failed to fetch|networkerror|load failed/i.test(error.message || '')) {
       friendly = `Cannot reach Ollama at ${ollamaUrl} — check it's running and started with OLLAMA_ORIGINS=* (or chrome-extension://*)`;
+    }
+    return {
+      result: null,
+      error: friendly,
+      processingTime: processingTime
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Google Gemini API (cloud, free-tier) — drop-in alternative to Ollama for
+// people who don't want to install/run a local model.
+// ---------------------------------------------------------------------------
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+async function testGeminiConnection(geminiApiKey, geminiModel) {
+  if (!geminiApiKey) {
+    throw new Error('Gemini API key is required. Get a free one at aistudio.google.com/apikey');
+  }
+
+  try {
+    console.log('[Football Ad Muter Background] 🔍 Testing Gemini API connection...');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${GEMINI_API_BASE}/models?key=${encodeURIComponent(geminiApiKey)}`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('[Football Ad Muter Background] Gemini test failed:', response.status, errorBody);
+      if (response.status === 400 || response.status === 403) {
+        throw new Error('Invalid Gemini API key');
+      }
+      throw new Error(`Gemini API error: ${response.status} - ${errorBody}`);
+    }
+
+    const data = await response.json();
+    const availableModels = (data.models || [])
+      .map(m => (m.name || '').replace(/^models\//, ''))
+      .filter(name => /gemini/i.test(name));
+
+    return {
+      success: true,
+      connected: true,
+      availableModels: availableModels
+    };
+  } catch (error) {
+    console.error('[Football Ad Muter Background] 💥 Error testing Gemini API:', error);
+    if (error.name === 'AbortError') {
+      throw new Error('Gemini API timed out after 10s');
+    }
+    throw error;
+  }
+}
+
+async function analyzeWithGemini(base64Image, geminiApiKey, customPrompt = DEFAULT_PROMPT, geminiModel = 'gemini-3.5-flash-lite') {
+  const startTime = Date.now();
+
+  if (!geminiApiKey) {
+    return {
+      result: null,
+      error: 'Gemini API key is required. Get a free one at aistudio.google.com/apikey',
+      processingTime: Date.now() - startTime
+    };
+  }
+
+  try {
+    console.log('[Football Ad Muter Background] 🤖 Starting Gemini API analysis...');
+    console.log('[Football Ad Muter Background] Using model:', geminiModel);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout, same as Ollama
+
+    const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: customPrompt },
+            { inline_data: { mime_type: 'image/jpeg', data: base64Image } }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0,      // deterministic classification
+          maxOutputTokens: 5,  // response is a single word (true/false)
+          // Gemini 3.x replaced the numeric thinkingBudget with a thinkingLevel
+          // enum; combining both fields in one request is a 400 error, so this
+          // must stay the only thinking-related field here.
+          thinkingConfig: { thinkingLevel: 'MINIMAL' }
+        }
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    const processingTime = Date.now() - startTime;
+
+    console.log('[Football Ad Muter Background] Gemini response status:', response.status, response.statusText);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Football Ad Muter Background] Gemini request failed:', response.status, errorText);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('[Football Ad Muter Background] Full Gemini response:', data);
+
+    const candidate = data.candidates && data.candidates[0];
+    const text = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
+    const result = (text || '').trim().toLowerCase();
+    console.log('[Football Ad Muter Background] Parsed result:', `"${result}"`);
+
+    let isGameplay = null;
+    if (/\btrue\b/.test(result)) {
+      console.log('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
+      isGameplay = true;
+    } else if (/\bfalse\b/.test(result)) {
+      console.log('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
+      isGameplay = false;
+    } else {
+      console.warn('[Football Ad Muter Background] ❓ Unexpected analysis response:', result, candidate && candidate.finishReason);
+    }
+
+    return {
+      result: isGameplay,
+      model: geminiModel,
+      response: data,
+      processingTime: processingTime
+    };
+
+  } catch (error) {
+    const processingTime = Date.now() - startTime;
+
+    console.error('[Football Ad Muter Background] 💥 Error calling Gemini API:', error);
+
+    let friendly = error.message;
+    if (error.name === 'AbortError') {
+      friendly = 'Gemini timed out after 30s';
+    } else if (/failed to fetch|networkerror|load failed/i.test(error.message || '')) {
+      friendly = 'Cannot reach the Gemini API — check your network connection';
     }
     return {
       result: null,

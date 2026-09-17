@@ -179,24 +179,26 @@ function logActivity(message, type = 'info') {
     type: type // 'info', 'success', 'warning', 'error'
   };
   
-  chrome.storage.sync.get(['activityLogs'], (storage) => {
+  // storage.local, not storage.sync — sync caps each item at 8KB, and 100
+  // entries of log text (plus emoji) routinely blows past that.
+  chrome.storage.local.get(['activityLogs'], (storage) => {
     if (chrome.runtime.lastError) {
       console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
       return;
     }
-    
+
     const logs = storage.activityLogs || [];
     logs.push(activityEntry);
-    
+
     // Keep only the last 100 entries
     const trimmedLogs = logs.slice(-100);
-    
-    chrome.storage.sync.set({ activityLogs: trimmedLogs }, () => {
+
+    chrome.storage.local.set({ activityLogs: trimmedLogs }, () => {
       if (chrome.runtime.lastError) {
         console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
         return;
       }
-      
+
       // Notify popup to refresh activity logs if it's open
       try {
         chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {
@@ -221,24 +223,24 @@ function logActivityWithImage(message, type = 'info', imageDataUrl = null) {
     imageUrl: imageDataUrl
   };
   
-  chrome.storage.sync.get(['activityLogs'], (storage) => {
+  chrome.storage.local.get(['activityLogs'], (storage) => {
     if (chrome.runtime.lastError) {
       console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
       return;
     }
-    
+
     const logs = storage.activityLogs || [];
     logs.push(activityEntry);
-    
+
     // Keep only the last 100 entries
     const trimmedLogs = logs.slice(-100);
-    
-    chrome.storage.sync.set({ activityLogs: trimmedLogs }, () => {
+
+    chrome.storage.local.set({ activityLogs: trimmedLogs }, () => {
       if (chrome.runtime.lastError) {
         console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
         return;
       }
-      
+
       // Notify popup to refresh activity logs if it's open
       try {
         chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {

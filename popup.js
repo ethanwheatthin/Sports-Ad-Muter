@@ -582,12 +582,22 @@ async function loadModels(ollamaUrl, savedModel) {
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'activityLogs', 'drmStatus', 'customPrompt', 'ollamaModel', 'sportMode', 'monitoredTabId'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus', 'customPrompt', 'ollamaModel', 'sportMode', 'monitoredTabId', 'apiProvider', 'geminiApiKey', 'geminiModel'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
 
   // Set existing settings
   const savedOllamaUrl = result.ollamaUrl || 'http://localhost:11434';
   document.getElementById('ollamaUrl').value = savedOllamaUrl;
+
+  // Restore AI provider toggle and Gemini-specific fields
+  document.getElementById('apiProvider').value = result.apiProvider || 'ollama';
+  document.getElementById('geminiApiKey').value = result.geminiApiKey || '';
+  const geminiModelSelect = document.getElementById('geminiModel');
+  geminiModelSelect.value = result.geminiModel || 'gemini-3.5-flash-lite';
+  // A stale/retired model name (e.g. from before a Google deprecation) won't
+  // match any <option> and leaves the select blank — fall back to default.
+  if (!geminiModelSelect.value) geminiModelSelect.value = 'gemini-3.5-flash-lite';
+  updateProviderFieldsVisibility();
 
   // Load models from the saved URL, restoring previously selected model
   loadModels(savedOllamaUrl, result.ollamaModel || '');
@@ -789,9 +799,19 @@ if (ollamaUrlInput) {
   });
 }
 
+// Show the Ollama or Gemini field group depending on the selected provider.
+function updateProviderFieldsVisibility() {
+  const provider = document.getElementById('apiProvider').value || 'ollama';
+  document.getElementById('ollamaFields').style.display = provider === 'gemini' ? 'none' : 'block';
+  document.getElementById('geminiFields').style.display = provider === 'gemini' ? 'block' : 'none';
+}
+
 // Read + validate the settings fields. Returns { settings } or { error }.
 function collectSettings() {
+  const apiProvider = document.getElementById('apiProvider').value || 'ollama';
   const ollamaUrl = (document.getElementById('ollamaUrl').value || 'http://localhost:11434').trim().replace(/\/+$/, '');
+  const geminiApiKey = document.getElementById('geminiApiKey').value.trim();
+  const geminiModel = document.getElementById('geminiModel').value;
   const customPrompt = document.getElementById('customPrompt').value.trim();
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
 
@@ -801,10 +821,16 @@ function collectSettings() {
   if (!customPrompt) {
     return { error: 'Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.' };
   }
+  if (apiProvider === 'gemini' && !geminiApiKey) {
+    return { error: 'Gemini API key is required. Get a free one at aistudio.google.com/apikey.' };
+  }
 
   return {
     settings: {
+      apiProvider: apiProvider,
       ollamaUrl: ollamaUrl,
+      geminiApiKey: geminiApiKey,
+      geminiModel: geminiModel,
       checkInterval: checkIntervalSeconds * 1000,
       customPrompt: customPrompt,
       ollamaModel: document.getElementById('ollamaModel').value,
@@ -901,10 +927,19 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 });
 
 // Auto-save whenever a settings field changes.
-['ollamaUrl', 'checkInterval', 'ollamaModel', 'customPrompt'].forEach((id) => {
+['ollamaUrl', 'checkInterval', 'ollamaModel', 'customPrompt', 'geminiApiKey', 'geminiModel'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', scheduleAutoSave);
 });
+
+// Provider toggle — switch visible fields immediately, then auto-save.
+const apiProviderSelect = document.getElementById('apiProvider');
+if (apiProviderSelect) {
+  apiProviderSelect.addEventListener('change', () => {
+    updateProviderFieldsVisibility();
+    scheduleAutoSave();
+  });
+}
 
 // Sport mode change — auto-fill prompt with mode preset, then auto-save.
 const sportModeSelect = document.getElementById('sportMode');
@@ -1078,7 +1113,7 @@ const clearActivityBtn = document.getElementById('clearActivityBtn');
 if (clearActivityBtn) {
   clearActivityBtn.addEventListener('click', () => {
     console.log('[Football Ad Muter Popup] Clear activity logs button clicked');
-    chrome.storage.sync.set({ activityLogs: [] }, () => {
+    chrome.storage.local.set({ activityLogs: [] }, () => {
       console.log('[Football Ad Muter Popup] Activity logs cleared from storage');
       // Clear expanded state tracking for activity logs
       expandedActivityEntries.clear();
@@ -1171,23 +1206,29 @@ if (testApiBtn) {
     console.log('[Football Ad Muter Popup] Test API button clicked');
     const testBtn = document.getElementById('testApiBtn');
     const statusDiv = document.getElementById('connectionStatus');
-    const ollamaUrl = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
-    
+    const provider = document.getElementById('apiProvider').value || 'ollama';
+
     // Update UI to show testing state
     testBtn.disabled = true;
     testBtn.textContent = 'Testing...';
     statusDiv.style.display = 'block';
     statusDiv.className = 'connection-status testing';
-    statusDiv.textContent = 'Testing connection to Ollama API...';
     renderStartOllamaHint(false);
-    
+
+    const message = { action: 'testApiConnection', provider: provider };
+    if (provider === 'gemini') {
+      message.geminiApiKey = document.getElementById('geminiApiKey').value.trim();
+      message.geminiModel = document.getElementById('geminiModel').value;
+      statusDiv.textContent = 'Testing connection to Gemini API...';
+    } else {
+      message.ollamaUrl = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
+      statusDiv.textContent = 'Testing connection to Ollama API...';
+    }
+
     console.log('[Football Ad Muter Popup] Sending API test request to background script');
-    
+
     // Send test request to background script
-    chrome.runtime.sendMessage({
-      action: 'testApiConnection',
-      ollamaUrl: ollamaUrl
-    }, (response) => {
+    chrome.runtime.sendMessage(message, (response) => {
       if (chrome.runtime.lastError) {
         console.error('[Football Ad Muter Popup] Runtime error during API test:', chrome.runtime.lastError);
         statusDiv.className = 'connection-status error';
@@ -1195,8 +1236,10 @@ if (testApiBtn) {
       } else if (response.error) {
         console.error('[Football Ad Muter Popup] API test failed:', response.error);
         statusDiv.className = 'connection-status error';
-        
-        if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
+
+        if (provider === 'gemini') {
+          statusDiv.textContent = `❌ ${response.error}`;
+        } else if (response.error.includes('Failed to fetch') || response.error.includes('NetworkError') || response.error.includes('aborted')) {
           statusDiv.textContent = '❌ Cannot connect to Ollama. Make sure it\'s running and CORS is enabled.';
           renderStartOllamaHint(true);
         } else {
@@ -1204,24 +1247,26 @@ if (testApiBtn) {
         }
       } else if (response.result) {
         console.log('[Football Ad Muter Popup] API test successful:', response.result);
-        
+
         if (response.result.success) {
           statusDiv.className = 'connection-status success';
-          statusDiv.textContent = '✅ Connection successful! Ollama is running.';
+          statusDiv.textContent = provider === 'gemini'
+            ? '✅ Connection successful! Gemini API key is valid.'
+            : '✅ Connection successful! Ollama is running.';
         } else {
           statusDiv.className = 'connection-status error';
           statusDiv.textContent = response.result.message || '❌ Connection test failed';
-          renderStartOllamaHint(true);
+          if (provider === 'ollama') renderStartOllamaHint(true);
         }
       } else {
         statusDiv.className = 'connection-status error';
         statusDiv.textContent = '❌ Unexpected response from API test';
       }
-      
+
       // Reset button state
       testBtn.disabled = false;
       testBtn.textContent = 'Test API Connection';
-      
+
       // Hide status (and hint, if shown) after 10 seconds
       setTimeout(() => {
         statusDiv.style.display = 'none';
@@ -1561,7 +1606,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // }
 
 function loadActivityLogs() {
-  chrome.storage.sync.get(['activityLogs'], (result) => {
+  chrome.storage.local.get(['activityLogs'], (result) => {
     const logs = result.activityLogs || [];
     console.log('[Football Ad Muter Popup] Loading', logs.length, 'activity logs from storage');
     displayActivityLogs(logs);

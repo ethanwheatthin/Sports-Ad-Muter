@@ -18,19 +18,41 @@
     <div class="section">
       <div class="section-title">Connection</div>
 
-      <label for="ollamaUrl">Ollama API URL</label>
-      <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
-      <div class="info">Default: http://localhost:11434</div>
+      <label for="apiProvider">AI Provider</label>
+      <select id="apiProvider">
+        <option value="ollama">Ollama (local — free, requires install)</option>
+        <option value="gemini">Google Gemini (cloud — free API key, no install)</option>
+      </select>
 
-      <div style="margin-top: 10px;">
-        <label for="ollamaModel">Model</label>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <select id="ollamaModel" style="flex: 1;">
-            <option value="">— Enter URL above and click Refresh —</option>
-          </select>
-          <button id="refreshModelsBtn" class="test-btn" style="flex-shrink: 0;" title="Fetch available models from Ollama">&#8635; Refresh</button>
+      <div id="ollamaFields" style="margin-top: 10px;">
+        <label for="ollamaUrl">Ollama API URL</label>
+        <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
+        <div class="info">Default: http://localhost:11434</div>
+
+        <div style="margin-top: 10px;">
+          <label for="ollamaModel">Model</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select id="ollamaModel" style="flex: 1;">
+              <option value="">— Enter URL above and click Refresh —</option>
+            </select>
+            <button id="refreshModelsBtn" class="test-btn" style="flex-shrink: 0;" title="Fetch available models from Ollama">&#8635; Refresh</button>
+          </div>
+          <div id="modelStatus"></div>
         </div>
-        <div id="modelStatus"></div>
+      </div>
+
+      <div id="geminiFields" style="margin-top: 10px; display: none;">
+        <label for="geminiApiKey">Gemini API Key</label>
+        <input type="password" id="geminiApiKey" placeholder="AIza...">
+        <div class="info">Free, no credit card: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></div>
+
+        <div style="margin-top: 10px;">
+          <label for="geminiModel">Model</label>
+          <select id="geminiModel">
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (recommended — highest free quota)</option>
+            <option value="gemini-3.5-flash">gemini-3.5-flash (more capable, lower free quota)</option>
+          </select>
+        </div>
       </div>
 
       <div class="button-group" style="margin-top: 10px;">
