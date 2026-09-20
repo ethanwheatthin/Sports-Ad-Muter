@@ -70,13 +70,41 @@ function notifyFab() {
   } catch (e) { /* widget not ready */ }
 }
 
+// Resolve this tab's ID, waiting for the background round-trip to finish if
+// it hasn't already. Callers used to read `currentTabId` directly while it
+// was still null, which raced beginMonitoring() into writing storage without
+// a monitoredTabId and left a stale value from a previous tab in place.
+let currentTabIdPromise = null;
+function ensureCurrentTabId() {
+  if (currentTabId != null) return Promise.resolve(currentTabId);
+  if (!currentTabIdPromise) {
+    currentTabIdPromise = new Promise((resolve) => {
+      if (typeof chrome === 'undefined' || !chrome.runtime) { resolve(null); return; }
+      chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
+        if (response && response.tabId) {
+          currentTabId = response.tabId;
+          console.log('[Football Ad Muter] Content script initialized in tab:', currentTabId);
+        }
+        resolve(currentTabId);
+      });
+    });
+  }
+  return currentTabIdPromise;
+}
+ensureCurrentTabId();
+
 // Single entry point for starting monitoring (used by the popup message, the
 // FAB, and anywhere else). Keeps storage in sync so every surface agrees.
-function beginMonitoring() {
-  const payload = currentTabId
-    ? { monitoredTabId: currentTabId, isEnabled: true }
-    : { isEnabled: true };
-  chrome.storage.sync.set(payload, () => startMonitoring());
+// `callback` receives { started: boolean, reason? } once it's known whether
+// monitoring actually began - callers must not assume success just because
+// this was invoked.
+function beginMonitoring(callback) {
+  ensureCurrentTabId().then((tabId) => {
+    const payload = tabId
+      ? { monitoredTabId: tabId, isEnabled: true }
+      : { isEnabled: true };
+    chrome.storage.sync.set(payload, () => startMonitoring(callback));
+  });
 }
 
 // Control surface for the injected FAB widget (fab.js).
@@ -91,17 +119,6 @@ window.__samControl = {
     } catch (e) { /* background asleep */ }
   }
 };
-
-// Get the current tab ID
-if (typeof chrome !== 'undefined' && chrome.runtime) {
-  // Request tab ID from background script
-  chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
-    if (response && response.tabId) {
-      currentTabId = response.tabId;
-      console.log('[Football Ad Muter] Content script initialized in tab:', currentTabId);
-    }
-  });
-}
 
 function initializeQueue() {
   if (!requestQueue) {
@@ -266,13 +283,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   } else if (request.action === 'start') {
     console.log('[Football Ad Muter] Start command received');
-    beginMonitoring();
-    sendResponse({ status: 'started' });
-    return false;
+    // Wait for the real outcome instead of replying optimistically - a wrong-
+    // tab rejection or any other failure must be visible to the caller, not
+    // silently swallowed while the UI reports success.
+    beginMonitoring((result) => {
+      if (result && result.started) {
+        sendResponse({ status: 'started' });
+      } else {
+        sendResponse({ status: 'rejected', reason: (result && result.reason) || 'unknown' });
+      }
+    });
+    return true;
   } else if (request.action === 'stop') {
     console.log('[Football Ad Muter] Stop command received');
     stopMonitoring();
     sendResponse({ status: 'stopped' });
+    return false;
+  } else if (request.action === 'getMonitoringStatus') {
+    sendResponse({ monitoring: isMonitoring });
     return false;
   } else if (request.action === 'updateSettings') {
     console.log('[Football Ad Muter] Settings update received:', {
@@ -379,29 +407,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return false;
 });
 
-function startMonitoring() {
+function startMonitoring(callback) {
+  const done = (result) => { if (callback) callback(result); };
+
   if (isMonitoring) {
     console.log('[Football Ad Muter] Monitoring already active, ignoring start request');
     logActivity('⚠️ Monitoring already active', 'warning');
+    done({ started: true, reason: 'already-active' });
     return;
   }
-  
+
   // Verify this is the correct tab to monitor
   chrome.storage.sync.get(['monitoredTabId'], (result) => {
     const monitoredTabId = result.monitoredTabId;
-    
+
     // Only start if we're in the monitored tab or no tab is set
     if (monitoredTabId && currentTabId && monitoredTabId !== currentTabId) {
       console.log('[Football Ad Muter] ⚠️ Not the monitored tab. This tab:', currentTabId, 'Monitored tab:', monitoredTabId);
       console.log('[Football Ad Muter] Ignoring start command - monitoring is active in another tab');
+      logActivity('⚠️ Monitoring is already running in another tab', 'warning');
+      done({ started: false, reason: 'wrong-tab' });
       return;
     }
-    
+
     console.log('[Football Ad Muter] ✅ Correct tab - starting monitoring');
-    
+
     // Initialize queue and sampler
     initializeQueue();
-  
+
     isMonitoring = true;
     console.log('[Football Ad Muter] Monitoring started - checking every', checkIntervalTime, 'ms');
     console.log('[Football Ad Muter] Using API URL:', ollamaUrl);
@@ -417,10 +450,17 @@ function startMonitoring() {
     let lastVideoElement = null;
     let consecutiveFailures = 0;
     let drmCheckPerformed = false;
-  
+
+    lastLoopTick = Date.now();
+    startWatchdog();
+
     checkInterval = setInterval(() => {
+    // Recorded on every tick regardless of outcome (no video, paused, etc.)
+    // so the watchdog only fires when the interval itself has stopped
+    // running, not just when there's nothing to capture.
+    lastLoopTick = Date.now();
     console.log('[Football Ad Muter] Running video check...');
-    
+
     // Use locked video if lock is enabled and video is still valid
     let video = null;
     if (videoLockEnabled && lockedVideo) {
@@ -526,30 +566,73 @@ function startMonitoring() {
       console.log('[Football Ad Muter] Video just started, waiting for content to load... (currentTime:', video.currentTime.toFixed(3), 's)');
     }
   }, Math.min(checkIntervalTime, 3000)); // Check more frequently than capture for adaptive timing
+
+    done({ started: true });
   });
 }
 
-function stopMonitoring() {
+// Watchdog: detects a monitoring loop that's flagged "on" but has stopped
+// actually ticking (e.g. an unexpected exception broke the interval, or some
+// other state got corrupted) and self-heals by restarting it. A tick that
+// merely finds "no video" or "video paused" still updates lastLoopTick, so
+// this only fires when the loop itself has gone silent, not when there's
+// legitimately nothing to capture.
+let lastLoopTick = 0;
+let watchdogInterval = null;
+const WATCHDOG_CHECK_MS = 15000;
+
+function startWatchdog() {
+  if (watchdogInterval) clearInterval(watchdogInterval);
+  watchdogInterval = setInterval(() => {
+    if (!isMonitoring) return;
+    const stallThreshold = Math.max(checkIntervalTime, 3000) * 3;
+    if (Date.now() - lastLoopTick > stallThreshold) {
+      console.warn('[Football Ad Muter] Monitoring loop appears stalled - restarting');
+      logActivity('⚠️ Monitoring stalled - automatically restarted', 'warning');
+      stopMonitoring({ internal: true });
+      startMonitoring();
+    }
+  }, WATCHDOG_CHECK_MS);
+}
+
+function stopWatchdog() {
+  if (watchdogInterval) {
+    clearInterval(watchdogInterval);
+    watchdogInterval = null;
+  }
+}
+
+// `opts.internal` marks a watchdog-triggered restart: it tears down and
+// recreates the capture loop/queue without touching storage or the video
+// lock/DRM state, since those aren't implicated in a stalled interval and a
+// user watching the tab shouldn't see monitoring "turn off" in the UI.
+function stopMonitoring(opts = {}) {
   if (!isMonitoring) return;
-  
+
   isMonitoring = false;
   if (checkInterval) {
     clearInterval(checkInterval);
     checkInterval = null;
   }
-  
+  stopWatchdog();
+
   // Clear the request queue
   if (requestQueue) {
     requestQueue.clear();
     console.log('[Football Ad Muter] Request queue cleared');
   }
-  
+
   // Reset adaptive sampler
   if (adaptiveSampler) {
     adaptiveSampler.reset();
     console.log('[Football Ad Muter] Adaptive sampler reset');
   }
-  
+
+  if (opts.internal) {
+    console.log('[Football Ad Muter] Monitoring loop restarting internally');
+    return;
+  }
+
   // Release video lock when stopping
   unlockVideo();
 
@@ -1173,36 +1256,58 @@ function checkCanvasContent(ctx, width, height) {
   return { hasVideoContent, pixelVariance, sampleSize: Math.floor(pixels.length / 16) };
 }
 
-// Method 1: Try ImageCapture API (best quality, modern browsers)
+// Method 1: Try ImageCapture API (modern browsers)
 async function captureWithImageCapture(video, maxWidth) {
   console.log('[Football Ad Muter] Attempting Method 1: ImageCapture API');
-  
+
+  let track = null;
   try {
     if (!('captureStream' in video)) {
       console.log('[Football Ad Muter] captureStream not available on video element');
       return null;
     }
-    
+
     const stream = video.captureStream();
-    const track = stream.getVideoTracks()[0];
-    
+    track = stream.getVideoTracks()[0];
+
     if (!track) {
       console.log('[Football Ad Muter] No video track available from stream');
       return null;
     }
-    
+
     const imageCapture = new ImageCapture(track);
-    const blob = await imageCapture.takePhoto();
-    
-    // Stop the track to free resources
-    track.stop();
-    
-    console.log('[Football Ad Muter] ✅ ImageCapture API successful, blob size:', blob.size, 'bytes');
-    return { blob, method: 'ImageCapture API' };
-    
+    // grabFrame() returns the current frame as an ImageBitmap - much lighter
+    // than takePhoto()'s full photo-capture pipeline, and lets us downscale
+    // to maxWidth like every other capture method instead of shipping the
+    // frame at native video resolution (which was bloating payload size and
+    // Ollama/Gemini inference time whenever this method succeeded).
+    const frame = await imageCapture.grabFrame();
+
+    const aspectRatio = frame.height / frame.width;
+    const width = frame.width > maxWidth ? maxWidth : frame.width;
+    const height = width * aspectRatio;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(frame, 0, 0, width, height);
+    frame.close();
+
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.8);
+    });
+
+    console.log('[Football Ad Muter] ✅ ImageCapture API successful, blob size:', blob?.size, 'bytes');
+    return blob ? { blob, method: 'ImageCapture API' } : null;
+
   } catch (error) {
     console.log('[Football Ad Muter] ImageCapture API failed:', error.message);
     return null;
+  } finally {
+    // Free the stream/track regardless of success, failure, or an early
+    // return above - previously this only ran on the success path.
+    if (track) track.stop();
   }
 }
 
@@ -1469,10 +1574,36 @@ async function performCapture(video) {
     }
     
     console.log('[Football Ad Muter] Successfully captured frame using:', captureResult.method);
-    
+
     // Mark this capture in the adaptive sampler
     adaptiveSampler.markCapture();
-    
+
+    // Cheap local scene-change check before spending an API call: if this
+    // frame is a near-duplicate of the last one, skip the network round-trip
+    // and leave the current mute state as-is. Never skip while an ad is
+    // playing though - that's exactly the state where a same-looking frame
+    // could still mean "the ad just ended" and we need the real answer.
+    if (!adaptiveSampler.isAdDetected) {
+      try {
+        const sigBitmap = await createImageBitmap(captureResult.blob);
+        const sigCanvas = document.createElement('canvas');
+        sigCanvas.width = 32;
+        sigCanvas.height = 32;
+        sigCanvas.getContext('2d').drawImage(sigBitmap, 0, 0, 32, 32);
+        sigBitmap.close();
+
+        const { similar, similarity } = await adaptiveSampler.analyzeFrameSimilarity(sigCanvas);
+        if (similar) {
+          console.log(`[Football Ad Muter] Frame unchanged (${(similarity * 100).toFixed(1)}% similar) - skipping API call`);
+          logActivity(`⏭️ Skipped analysis - unchanged frame (${(similarity * 100).toFixed(0)}% similar)`, 'info');
+          return;
+        }
+      } catch (sigError) {
+        // Pure optimization - never let it block the real analysis.
+        console.warn('[Football Ad Muter] Frame similarity check failed, continuing with analysis:', sigError.message);
+      }
+    }
+
     // logActivity(`📸 Frame captured (${captureResult.method})`, 'info');
     console.log('[Football Ad Muter] Converting blob to base64...');
     

@@ -626,7 +626,13 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus',
   updateUI();
   loadActivityLogs();
   loadRecentFrames();
-  
+
+  // Storage says monitoring is on, but that flag survives page reloads that
+  // wipe out the content script's actual in-memory state (isMonitoring resets
+  // to false there). Verify against the real tab so the popup doesn't show a
+  // phantom "Stop" button for a loop that isn't actually running.
+  reconcileMonitoringState();
+
   // Start auto-refresh of logs while popup is open
   startLogRefresh();
 
@@ -969,6 +975,26 @@ document.getElementById('resetPromptBtn').addEventListener('click', () => {
   }
 });
 
+// Verify that a tab we believe is monitoring (per storage) is actually
+// running its capture loop, and correct our local state/UI if not. This is
+// what catches the "reloaded the monitored page" case: storage still says
+// isEnabled/monitoredTabId from before the reload, but the fresh content
+// script instance has isMonitoring = false and no interval running.
+function reconcileMonitoringState() {
+  if (!isMonitoring || !monitoredTabId) return;
+
+  chrome.tabs.sendMessage(monitoredTabId, { action: 'getMonitoringStatus' }, (response) => {
+    if (chrome.runtime.lastError || !response || !response.monitoring) {
+      console.warn('[Football Ad Muter Popup] Stored monitoring state is stale, clearing it:',
+        chrome.runtime.lastError ? chrome.runtime.lastError.message : response);
+      isMonitoring = false;
+      monitoredTabId = null;
+      chrome.storage.sync.set({ isEnabled: false, monitoredTabId: null });
+      updateUI();
+    }
+  });
+}
+
 // Send the 'start' command to a tab and wire up the resulting UI/auto-lock.
 // Shared by the Start button and the auto-save stop/resume cycle.
 function performStart(tab, callback) {
@@ -988,6 +1014,14 @@ function performStart(tab, callback) {
       return;
     }
     console.log('[Football Ad Muter Popup] Start response:', response);
+    if (response && response.status === 'rejected') {
+      // The content script decided NOT to start (e.g. another tab is already
+      // being monitored) - surface that instead of reporting success, which
+      // is how this used to silently look "on" while nothing ran.
+      console.error('[Football Ad Muter Popup] Monitoring start was rejected:', response.reason);
+      callback(false, response.reason || 'rejected');
+      return;
+    }
     if (response && response.status === 'started') {
       isMonitoring = true;
       monitoredTabId = tab.id;
@@ -1081,9 +1115,13 @@ document.getElementById('startBtn').addEventListener('click', () => {
       alert('Error: Cannot find a webpage to monitor. Please navigate to a page with video content.');
       return;
     }
-    performStart(tab, (ok) => {
+    performStart(tab, (ok, reason) => {
       if (!ok) {
-        alert('Error: Cannot start monitoring. Make sure you are on a webpage with video content.');
+        if (reason === 'wrong-tab') {
+          alert('Monitoring is already running in another tab. Stop it there first, or reload this page and try again.');
+        } else {
+          alert('Error: Cannot start monitoring. Make sure you are on a webpage with video content.');
+        }
       }
     });
   });

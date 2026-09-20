@@ -84,34 +84,41 @@ class AdaptiveSampler {
     return { similar: isSimilar, similarity: similarity };
   }
   
-  // Extract a lightweight signature from the frame for comparison
+  // Extract a lightweight signature from the frame for comparison. The caller
+  // passes a small canvas (e.g. 32x32) dedicated to this check, so a single
+  // getImageData() over the whole thing is far cheaper than one call per
+  // sampled pixel.
   extractFrameSignature(canvas) {
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
-    
+
     // Sample a grid of pixels (e.g., 8x8 grid)
     const gridSize = 8;
     const stepX = Math.floor(width / gridSize);
     const stepY = Math.floor(height / gridSize);
     const signature = [];
-    
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+
     for (let y = 0; y < gridSize; y++) {
       for (let x = 0; x < gridSize; x++) {
         const pixelX = x * stepX + Math.floor(stepX / 2);
         const pixelY = y * stepY + Math.floor(stepY / 2);
-        
-        const imageData = ctx.getImageData(pixelX, pixelY, 1, 1);
-        const [r, g, b] = imageData.data;
-        
+
+        const offset = (pixelY * width + pixelX) * 4;
+        const r = data[offset];
+        const g = data[offset + 1];
+        const b = data[offset + 2];
+
         // Calculate brightness and dominant color
         const brightness = (r + g + b) / 3;
         const dominantColor = r > g && r > b ? 'r' : g > b ? 'g' : 'b';
-        
+
         signature.push({ brightness, dominantColor });
       }
     }
-    
+
     return signature;
   }
   
