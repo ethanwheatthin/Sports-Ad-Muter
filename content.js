@@ -273,6 +273,44 @@ function logActivityWithImage(message, type = 'info', imageDataUrl = null) {
   });
 }
 
+// One-off capture for the panel's "Capture Test Frame" button. Runs the same
+// capture path as monitoring but sends nothing to the model and never mutes.
+async function runCaptureTest() {
+  const video = getActiveVideo();
+  if (!video) return { ok: false, error: 'No video element found on this page' };
+  if (!video.videoWidth || !video.videoHeight) {
+    return { ok: false, error: `Video has no dimensions yet (readyState ${video.readyState})` };
+  }
+
+  // Monitoring does the DRM check on start; do it here if it hasn't run.
+  if (!isMonitoring) await checkForDrmProtection(video);
+  const drm = !!currentSite.isDrmProtected;
+
+  let result;
+  if (drm) {
+    result = await captureViaTabCapture(video);
+  } else {
+    lastCaptureNote = 'all in-page capture methods failed';
+    result = await captureVideoFrame(video, 800);
+  }
+  if (!result) return { ok: false, drm, error: lastCaptureNote || 'capture failed' };
+
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(result.blob);
+  });
+  return {
+    ok: true,
+    drm,
+    method: result.method,
+    bytes: result.blob.size,
+    videoSize: `${video.videoWidth}x${video.videoHeight}`,
+    dataUrl
+  };
+}
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Football Ad Muter] Received message from popup:', request);
@@ -348,6 +386,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ found: false, error: err?.message || String(err) });
     }
     return false;
+  } else if (request.action === 'captureTestFrame') {
+    runCaptureTest()
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+    return true;
   } else if (request.action === 'getQueueStatus') {
     // Return queue and sampler status
     try {
@@ -1119,11 +1162,16 @@ async function cropShotToVideo(dataUrl, video) {
   }
 }
 
+// Why the last captureViaTabCapture() returned null - surfaced by the panel's
+// "Capture Test Frame" button.
+let lastCaptureNote = '';
+
 // Capture a DRM video frame. Foreground tabs use a viewport screenshot
 // (captureVisibleTab) which works in fullscreen and needs no stream.
 // Backgrounded tabs use the opt-in offscreen tab-capture stream, if armed.
 // Returns { blob, method } or null (caller falls back to audio/DOM signals).
 async function captureViaTabCapture(video) {
+  lastCaptureNote = '';
   const foreground = document.visibilityState === 'visible' && !document.hidden;
 
   if (foreground) {
@@ -1134,11 +1182,15 @@ async function captureViaTabCapture(video) {
         return { blob: cropped.blob, method: 'Visible Tab (DRM)' };
       }
       if (cropped && cropped.black) {
+        lastCaptureNote = 'Screenshot was black (protected video, likely hardware DRM)';
         logActivity('⬛ Protected frame unreadable (black) - using audio/DOM signals', 'warning');
         return null;
       }
     } else if (shot && shot.error && shot.error !== 'not-visible') {
       console.log('[Football Ad Muter] captureVisibleTab failed:', shot.error);
+      lastCaptureNote = 'captureVisibleTab failed: ' + shot.error;
+    } else {
+      lastCaptureNote = shot ? 'Tab is not the visible tab in its window' : 'No response from background script (try reloading the extension)';
     }
     // fall through to stream / signals
   }
@@ -1146,6 +1198,7 @@ async function captureViaTabCapture(video) {
   // Background path: opt-in offscreen tab-capture stream.
   refreshDrmCaptureStatus();
   if (!drmCaptureArmed) {
+    lastCaptureNote = (lastCaptureNote ? lastCaptureNote + '; ' : '') + 'background capture is not armed';
     console.log('[Football Ad Muter] Background DRM capture not enabled - using signals');
     return null;
   }
@@ -1178,6 +1231,7 @@ async function captureViaTabCapture(video) {
       drmCaptureArmed = false;
     }
     console.log('[Football Ad Muter] DRM frame capture failed:', resp && resp.error);
+    lastCaptureNote = 'tab capture failed: ' + ((resp && resp.error) || 'no response');
     return null;
   }
 

@@ -550,6 +550,9 @@ async function loadModels(ollamaUrl, savedModel) {
     }
 
     const data = await response.json();
+    const decisionModels = new Set(
+      (data.models || []).filter(m => (m.capabilities || []).includes('decision')).map(m => m.name)
+    );
     const models = (data.models || []).map(m => m.name).filter(Boolean);
 
     select.innerHTML = '';
@@ -562,7 +565,7 @@ async function loadModels(ollamaUrl, savedModel) {
     models.forEach(name => {
       const opt = document.createElement('option');
       opt.value = name;
-      opt.textContent = name;
+      opt.textContent = decisionModels.has(name) ? `${name} (decision)` : name;
       select.appendChild(opt);
     });
 
@@ -582,7 +585,7 @@ async function loadModels(ollamaUrl, savedModel) {
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus', 'customPrompt', 'ollamaModel', 'sportMode', 'monitoredTabId', 'apiProvider', 'geminiApiKey', 'geminiModel'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus', 'customPrompt', 'ollamaModel', 'detectionEngine', 'sportMode', 'monitoredTabId', 'apiProvider', 'geminiApiKey', 'geminiModel'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
 
   // Set existing settings
@@ -601,6 +604,9 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus',
 
   // Load models from the saved URL, restoring previously selected model
   loadModels(savedOllamaUrl, result.ollamaModel || '');
+
+  const engineSelect = document.getElementById('detectionEngine');
+  if (engineSelect) engineSelect.value = result.detectionEngine || 'generative';
 
   // Restore sport mode dropdown
   const savedMode = result.sportMode || 'american';
@@ -840,6 +846,7 @@ function collectSettings() {
       checkInterval: checkIntervalSeconds * 1000,
       customPrompt: customPrompt,
       ollamaModel: document.getElementById('ollamaModel').value,
+      detectionEngine: document.getElementById('detectionEngine').value,
       sportMode: document.getElementById('sportMode').value
     }
   };
@@ -933,7 +940,7 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 });
 
 // Auto-save whenever a settings field changes.
-['ollamaUrl', 'checkInterval', 'ollamaModel', 'customPrompt', 'geminiApiKey', 'geminiModel'].forEach((id) => {
+['ollamaUrl', 'checkInterval', 'ollamaModel', 'detectionEngine', 'customPrompt', 'geminiApiKey', 'geminiModel'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', scheduleAutoSave);
 });
@@ -1315,6 +1322,41 @@ if (testApiBtn) {
 }
 
 // Reset video player
+// Capture Test Frame - one screenshot via the same path monitoring uses, shown
+// in the panel. Nothing is analyzed and nothing is muted.
+const captureTestBtn = document.getElementById('captureTestBtn');
+if (captureTestBtn) {
+  captureTestBtn.addEventListener('click', () => {
+    const out = document.getElementById('captureTestResult');
+    const show = (html) => { out.style.display = 'block'; out.innerHTML = html; };
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    captureTestBtn.disabled = true;
+    show('Capturing...');
+    const done = () => { captureTestBtn.disabled = false; };
+
+    getTargetTab((tab) => {
+      if (!tab) { show('&#10060; No suitable tab found. Open the video page first.'); done(); return; }
+      chrome.tabs.sendMessage(tab.id, { action: 'captureTestFrame' }, (res) => {
+        done();
+        if (chrome.runtime.lastError || !res) {
+          show('&#10060; Could not reach the page. Refresh the tab and try again.');
+          return;
+        }
+        if (!res.ok) {
+          show(`&#10060; <strong>No frame captured.</strong> ${esc(res.error)}${res.drm ? '<br>DRM mode: on' : ''}`);
+          return;
+        }
+        show(
+          `&#9989; <strong>${esc(res.method)}</strong> &middot; ${esc(res.videoSize)} &middot; ${(res.bytes / 1024).toFixed(0)} KB` +
+          `${res.drm ? ' &middot; DRM mode' : ''}<br>` +
+          `<img src="${res.dataUrl}" alt="Captured test frame" style="max-width: 100%; margin-top: 6px; border-radius: 4px;">`
+        );
+      });
+    });
+  });
+}
+
 const resetVideoBtn = document.getElementById('resetVideoBtn');
 if (resetVideoBtn) {
   resetVideoBtn.addEventListener('click', () => {
@@ -1646,7 +1688,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadActivityLogs() {
   chrome.storage.local.get(['activityLogs'], (result) => {
     const logs = result.activityLogs || [];
-    console.log('[Football Ad Muter Popup] Loading', logs.length, 'activity logs from storage');
     displayActivityLogs(logs);
   });
 }
@@ -1660,21 +1701,8 @@ function loadRecentFrames() {
       return;
     }
     
+    // Runs every 2s from startLogRefresh - keep it quiet (entries hold base64 images).
     const logs = result.analysisLogs || [];
-    console.log('[Football Ad Muter Popup] ✅ Loaded', logs.length, 'analysis logs from storage.local');
-    
-    // Debug: Show the first few log entries to understand structure
-    if (logs.length > 0) {
-      console.log('[Football Ad Muter Popup] First log entry:', logs[0]);
-      console.log('[Football Ad Muter Popup] Last log entry:', logs[logs.length - 1]);
-      
-      // Count how many have images
-      const withImages = logs.filter(log => log.imageUrl).length;
-      console.log('[Football Ad Muter Popup] Logs with imageUrl:', withImages);
-    } else {
-      console.log('[Football Ad Muter Popup] ⚠️ No analysis logs found in storage.local');
-    }
-    
     displayRecentFrames(logs);
   });
 }
@@ -1682,14 +1710,9 @@ function loadRecentFrames() {
 function displayRecentFrames(logs) {
   const container = document.getElementById('recentFramesContainer');
   
-  console.log('[Football Ad Muter Popup] Total logs:', logs.length);
-  console.log('[Football Ad Muter Popup] Sample log:', logs.length > 0 ? logs[logs.length - 1] : 'none');
-  
   // Filter logs that have images (LLM response is optional)
   const logsWithImages = logs.filter(log => log.imageUrl);
-  
-  console.log('[Football Ad Muter Popup] Logs with images:', logsWithImages.length);
-  
+
   if (logsWithImages.length === 0) {
     container.innerHTML = '<div class="no-logs" style="grid-column: 1 / -1;">No frames captured yet. Start monitoring to see captured frames.</div>';
     return;

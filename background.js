@@ -2,6 +2,7 @@
 
 // Open the side panel when the toolbar icon is clicked (instead of a popup).
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+importScripts('decision-model.js');
 
 // Default AI prompt
 const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
@@ -285,7 +286,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Get custom prompt, provider, and provider-specific settings from storage,
     // or use defaults. Storage is the source of truth so a stale content-script
     // value can't override what the user configured and tested in the popup.
-    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl', 'apiProvider', 'geminiApiKey', 'geminiModel'], (storage) => {
+    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl', 'apiProvider', 'geminiApiKey', 'geminiModel', 'detectionEngine'], (storage) => {
       const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
       const provider = storage.apiProvider || 'ollama';
 
@@ -299,7 +300,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         ollamaUrl = ollamaUrl.trim().replace(/\/+$/, ''); // trim trailing slash
         if (ollamaUrl.includes('/ollama/api')) ollamaUrl = 'http://localhost:11434';
         console.log('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
-        analysisPromise = analyzeWithOllama(request.base64Image, ollamaUrl, customPrompt, ollamaModel);
+        // Route to the configured engine: generative vision model or decision model
+        analysisPromise = storage.detectionEngine === 'decision'
+          ? analyzeWithDecisionModel(request.base64Image, ollamaUrl, ollamaModel)
+          : analyzeWithOllama(request.base64Image, ollamaUrl, customPrompt, ollamaModel);
       }
 
       // Handle async operation properly
@@ -438,6 +442,52 @@ async function testOllamaConnection(ollamaUrl) {
       apiUrl: `${ollamaUrl}/api/tags`
     });
     throw error;
+  }
+}
+
+async function analyzeWithDecisionModel(base64Image, ollamaUrl, model) {
+  const startTime = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    // text/plain avoids a CORS preflight, same as analyzeWithOllama.
+    const response = await fetch(`${ollamaUrl}/v1/systemone`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify(buildDecisionRequest(model, base64Image)),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    const processingTime = Date.now() - startTime;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama decision API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    const { result, probability } = interpretDecision(data);
+    const label = probability === null ? 'no answer' : `broadcast ${(probability * 100).toFixed(1)}%`;
+    console.log('[Football Ad Muter Background] Decision model:', label, '->', result);
+
+    return {
+      result,
+      model: data.model || model,
+      // `thinking` is what content.js shows in the activity log
+      response: { thinking: `Decision model: ${label}`, probability, answers: data.answers, usage: data.usage },
+      processingTime
+    };
+  } catch (error) {
+    let friendly = error.message;
+    if (error.name === 'AbortError') {
+      friendly = `Ollama timed out after 30s (${ollamaUrl})`;
+    } else if (/failed to fetch|networkerror|load failed/i.test(error.message || '')) {
+      friendly = `Cannot reach Ollama at ${ollamaUrl} — check it's running (v0.35.1+ for decision models) and allows this origin`;
+    }
+    return { result: null, error: friendly, processingTime: Date.now() - startTime };
   }
 }
 

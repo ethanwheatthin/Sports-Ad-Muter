@@ -30,6 +30,15 @@
         <div class="info">Default: http://localhost:11434</div>
 
         <div style="margin-top: 10px;">
+          <label for="detectionEngine">Detection Engine</label>
+          <select id="detectionEngine">
+            <option value="generative">Generative vision model (prompt)</option>
+            <option value="decision">Decision model (e.g. clef-flash)</option>
+          </select>
+          <div class="info">Decision models return a probability instead of text and ignore the prompt below. Needs Ollama v0.35.1+.</div>
+        </div>
+
+        <div style="margin-top: 10px;">
           <label for="ollamaModel">Model</label>
           <div style="display: flex; gap: 8px; align-items: center;">
             <select id="ollamaModel" style="flex: 1;">
@@ -116,7 +125,9 @@
       <div class="section-title">Controls</div>
       <div class="button-group">
         <button id="resetVideoBtn" class="reset-btn">Reset Video Player</button>
+        <button id="captureTestBtn" class="reset-btn" title="Take one screenshot the way monitoring does, without analyzing it">&#128247; Capture Test Frame</button>
       </div>
+      <div id="captureTestResult" class="info" style="margin-top: 8px; display: none;"></div>
     </div>
 
     <!-- Video Status -->
