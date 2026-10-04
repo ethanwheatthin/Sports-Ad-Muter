@@ -2,6 +2,8 @@
 // On-page floating action button (FAB) for S.A.M. Created the first time
 // monitoring starts and then persists for the tab's page session. Shows the
 // detector status and quick actions (Start/Stop, Reset player, Open settings).
+// Collapsed, it shows a verdict chip (state, confidence, engine, latency) and
+// flashes a camera tick each time a frame is captured.
 //
 // Talks to content.js only through window.__samControl:
 //   start() / stop() / resetPlayer() / openSettings() / getStatus()
@@ -16,6 +18,9 @@
   let pollTimer = null;
   let lastStatus = null;
   let lastSig = null;
+  let lastCaptureAt = null;
+  let flashUntil = 0;
+  let flashTimer = null;
 
   // Position (distance from viewport right / bottom edges, px) + drag state.
   let pos = { right: 20, bottom: 20 };
@@ -28,7 +33,8 @@
     analyzing:     { color: '#2563eb', label: 'Analyzing…',     pulse: true  },
     gameplay:      { color: '#16a34a', label: 'Gameplay',       pulse: false },
     ad:            { color: '#d97706', label: 'Ad — muted',     pulse: false },
-    inconclusive:  { color: '#6b7280', label: 'Inconclusive',   pulse: false }
+    inconclusive:  { color: '#6b7280', label: 'Inconclusive',   pulse: false },
+    error:         { color: '#dc2626', label: 'Model error',    pulse: false }
   };
 
   const CSS = `
@@ -40,7 +46,36 @@
       display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
       opacity: .38; transition: opacity .2s ease;
     }
-    .wrap:hover, .wrap.expanded, .wrap.dragging { opacity: 1; }
+    .wrap:hover, .wrap.expanded, .wrap.dragging, .wrap.flash { opacity: 1; }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .row.flip { flex-direction: row-reverse; }
+    .chip {
+      display: flex; align-items: center; gap: 6px;
+      background: #ffffff; color: #1f2937; border-radius: 999px;
+      padding: 6px 12px 6px 10px; font-size: 12px; font-weight: 700;
+      border-left: 4px solid var(--c, #6b7280);
+      box-shadow: 0 4px 14px rgba(0,0,0,.2); white-space: nowrap; cursor: default;
+    }
+    .chip .glyph { width: 16px; height: 16px; display: grid; place-items: center; color: var(--c); }
+    .chip .glyph svg { width: 16px; height: 16px; }
+    .chip .pct { font-variant-numeric: tabular-nums; }
+    .chip .src { font-size: 10px; font-weight: 600; opacity: .6; text-transform: uppercase; letter-spacing: .4px; }
+    .pill.detail { background: #f8fafc; color: #475569; font-weight: 500; font-size: 12px; padding: 8px 14px; }
+    .cam {
+      position: absolute; left: -6px; bottom: -6px; width: 24px; height: 24px; border-radius: 50%;
+      background: #fff; color: #4c3a63; border: 2px solid #4c3a63; display: grid; place-items: center;
+      animation: shot 1.4s ease-out forwards; pointer-events: none;
+    }
+    .cam.skipped { border-style: dashed; opacity: .8; }
+    .cam svg { width: 13px; height: 13px; }
+    @keyframes shot {
+      0% { transform: scale(.3); opacity: 0; } 12% { transform: scale(1.2); opacity: 1; }
+      25% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; }
+    }
+    .ring.flash { animation: flashring .7s ease-out; }
+    @keyframes flashring {
+      0% { box-shadow: 0 0 0 0 rgba(255,255,255,.95); } 100% { box-shadow: 0 0 0 16px rgba(255,255,255,0); }
+    }
     .items {
       display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
       transition: opacity .15s ease;
@@ -113,6 +148,53 @@
   const ICON_GAMEPLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M16 8.5a4 4 0 010 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 6a7.5 7.5 0 010 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const ICON_AD = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
+  const ICON_CAM = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 4l-1.8 2H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-3.2L15 4H9zm3 4.5a4.5 4.5 0 110 9 4.5 4.5 0 010-9z"/></svg>';
+  const ICON_WARN = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L1 21h22L12 2zm1 15h-2v-2h2v2zm0-4h-2V9h2v4z"/></svg>';
+
+  // Compact verdict for the collapsed-FAB chip. null = nothing to show yet.
+  function chipInfo(s) {
+    if (!s || !s.monitoring) return null;
+    const dec = s.decision || {};
+    const labels = { gameplay: 'Gameplay', ad: 'Ad · muted', error: 'Model error', inconclusive: 'Unclear' };
+    if (!labels[dec.state]) return null;
+    const src = [dec.engine, dec.latencyMs != null ? dec.latencyMs + 'ms' : null].filter(Boolean).join(' · ');
+    return {
+      state: dec.state,
+      label: labels[dec.state],
+      pct: dec.confidence != null ? Math.round(dec.confidence * 100) + '%' : '',
+      src
+    };
+  }
+
+  function detailText(s) {
+    if (!s || !s.monitoring) return '';
+    const dec = s.decision || {};
+    const bits = [];
+    if (dec.model) bits.push(dec.model);
+    if (dec.method) bits.push(dec.method);
+    if (dec.state === 'error' && dec.error) bits.push(dec.error);
+    return bits.join(' · ');
+  }
+
+  function statsText(s) {
+    const st = s && s.stats;
+    if (!st || !s.monitoring || !st.frames) return '';
+    return st.frames + ' checked · ' + st.ads + (st.ads === 1 ? ' ad break' : ' ad breaks') +
+      (st.errors ? ' · ' + st.errors + ' errors' : '');
+  }
+
+  // Light the camera tick when a new frame grab is reported.
+  function noteCapture(s) {
+    const cap = s && s.capture;
+    if (!cap || !cap.at) return;
+    if (lastCaptureAt === null) { lastCaptureAt = cap.at; return; }   // first sight: don't flash
+    if (cap.at === lastCaptureAt) return;
+    lastCaptureAt = cap.at;
+    flashUntil = Date.now() + 1400;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { if (root) render(true); }, 1450);
+  }
+
   function statusText(s) {
     if (!s) return { label: 'Idle', sub: '' };
     const dec = s.decision || {};
@@ -145,6 +227,7 @@
     const st = s && s.monitoring ? (s.decision || {}).state : 'idle';
     if (st === 'gameplay') return ICON_GAMEPLAY;
     if (st === 'ad') return ICON_AD;
+    if (st === 'error') return ICON_WARN;
     if (st === 'analyzing') return ICON_SAM;
     return ICON_STOP;
   }
@@ -163,13 +246,20 @@
     const s = lastStatus;
     const monitoring = !!(s && s.monitoring);
     const txt = statusText(s);
+    const chip = chipInfo(s);
+    const detail = expanded ? detailText(s) : '';
+    const stats = expanded ? statsText(s) : '';
+    const flashing = Date.now() < flashUntil;
+    const skipped = !!(flashing && s && s.capture && s.capture.skipped);
+    const flip = pos.right > window.innerWidth / 2;   // keep the chip on-screen near the left edge
 
     // Only rebuild the DOM when something visible actually changed. Background
     // status polls that produce an identical view are ignored, so the expanded
     // buttons don't flash/re-animate.
     const sig = JSON.stringify([
       expanded, monitoring, (s && s.decision || {}).state,
-      txt.label, txt.sub, !!(s && s.drm), ringColor(s), ringPulse(s)
+      txt.label, txt.sub, !!(s && s.drm), ringColor(s), ringPulse(s),
+      chip, detail, stats, flashing, skipped, flip
     ]);
     if (!force && sig === lastSig) return;
     const wasOpen = lastSig !== null && JSON.parse(lastSig)[0] === true;
@@ -177,7 +267,7 @@
     const justOpened = expanded && !wasOpen;
 
     root.innerHTML = `<style>${CSS}</style>
-      <div class="wrap ${expanded ? 'expanded' : ''} ${dragging ? 'dragging' : ''}"
+      <div class="wrap ${expanded ? 'expanded' : ''} ${dragging ? 'dragging' : ''} ${flashing ? 'flash' : ''}"
            style="right:${pos.right}px; bottom:${pos.bottom}px;">
         <div class="items ${expanded ? '' : 'hidden'} ${justOpened ? 'opening' : ''}">
           <div class="pill">
@@ -185,6 +275,8 @@
             <span>${escapeHtml(txt.label)}</span>
             ${txt.sub ? `<span class="sub">${escapeHtml(txt.sub)}</span>` : ''}
           </div>
+          ${detail ? `<div class="pill detail">${escapeHtml(detail)}</div>` : ''}
+          ${stats ? `<div class="pill detail">${escapeHtml(stats)}</div>` : ''}
           <button class="action" data-act="toggle">
             <span class="dot">${monitoring ? ICON_STOP : ICON_PLAY}</span>
             <span>${monitoring ? 'Stop monitoring' : 'Start monitoring'}</span>
@@ -196,11 +288,20 @@
             <span class="dot">${ICON_GEAR}</span><span>Open full settings</span>
           </button>
         </div>
-        <button class="fab" data-act="fab" title="${escapeHtml(txt.label)}${txt.sub ? ' — ' + escapeHtml(txt.sub) : ''}">
-          <span class="ring ${ringPulse(s) ? 'pulse' : ''}" style="--ring:${ringColor(s)}"></span>
-          ${centerIcon(s)}
-          ${s && s.drm ? '<span class="badge">🔒</span>' : ''}
-        </button>
+        <div class="row ${flip ? 'flip' : ''}">
+          ${chip && !expanded ? `<div class="chip" style="--c:${ringColor(s)}" title="${escapeHtml(detailText(s) || chip.label)}">
+            <span class="glyph">${chip.state === 'ad' ? ICON_AD : chip.state === 'gameplay' ? ICON_GAMEPLAY : ICON_WARN}</span>
+            <span>${escapeHtml(chip.label)}</span>
+            ${chip.pct ? `<span class="pct">${escapeHtml(chip.pct)}</span>` : ''}
+            ${chip.src ? `<span class="src">${escapeHtml(chip.src)}</span>` : ''}
+          </div>` : ''}
+          <button class="fab" data-act="fab" title="${escapeHtml(txt.label)}${txt.sub ? ' — ' + escapeHtml(txt.sub) : ''}">
+            <span class="ring ${ringPulse(s) ? 'pulse' : ''} ${flashing ? 'flash' : ''}" style="--ring:${ringColor(s)}"></span>
+            ${centerIcon(s)}
+            ${s && s.drm ? '<span class="badge">🔒</span>' : ''}
+            ${flashing ? `<span class="cam ${skipped ? 'skipped' : ''}" title="Frame captured">${ICON_CAM}</span>` : ''}
+          </button>
+        </div>
       </div>`;
 
     root.querySelectorAll('[data-act]').forEach((el) => {
@@ -316,7 +417,7 @@
   function refresh() {
     try {
       const s = window.__samControl && window.__samControl.getStatus();
-      if (s) { lastStatus = s; render(); }
+      if (s) { lastStatus = s; noteCapture(s); render(); }
     } catch (e) { /* content not ready */ }
   }
 
@@ -343,7 +444,7 @@
       }, 1500);
     },
     update(status) {
-      if (status) { lastStatus = status; }
+      if (status) { lastStatus = status; noteCapture(status); }
       if (root) render();
     },
     destroy() {

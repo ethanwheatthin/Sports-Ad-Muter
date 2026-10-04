@@ -619,6 +619,7 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus',
 
   // Load custom prompt — use saved value, or fall back to the saved mode's default
   document.getElementById('customPrompt').value = result.customPrompt || SPORT_MODE_PROMPTS[savedMode] || DEFAULT_PROMPT;
+  if (window.SamPanel) window.SamPanel.syncSettingsUI();
   
   isMonitoring = result.isEnabled || false;
   monitoredTabId = result.monitoredTabId || null;
@@ -669,7 +670,6 @@ function startLogRefresh() {
   
   // Refresh logs every 2 seconds while popup is open
   refreshInterval = setInterval(() => {
-    loadActivityLogs();
     loadRecentFrames();
     // also update the small video status indicators
     updateVideoStatus();
@@ -827,8 +827,8 @@ function collectSettings() {
   const customPrompt = document.getElementById('customPrompt').value.trim();
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
 
-  if (isNaN(checkIntervalSeconds) || checkIntervalSeconds < 1 || checkIntervalSeconds > 60) {
-    return { error: 'Check interval must be between 1 and 60 seconds' };
+  if (isNaN(checkIntervalSeconds) || checkIntervalSeconds < 10 || checkIntervalSeconds > 180) {
+    return { error: 'Check interval must be between 10 and 180 seconds' };
   }
   if (!customPrompt) {
     return { error: 'Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.' };
@@ -1361,8 +1361,7 @@ const resetVideoBtn = document.getElementById('resetVideoBtn');
 if (resetVideoBtn) {
   resetVideoBtn.addEventListener('click', () => {
     console.log('[Football Ad Muter Popup] Reset video button clicked');
-    const resetBtn = document.getElementById('resetVideoBtn');
-    const statusDiv = document.getElementById('connectionStatus');
+    const statusDiv = document.getElementById('videoActionStatus');
     
     // Hide DRM alert when resetting
     document.getElementById('drmStatusSection').style.display = 'none';
@@ -1404,21 +1403,19 @@ function updateUI() {
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
   const status = document.getElementById('status');
-  const metricsSection = document.getElementById('metricsSection');
   
   if (isMonitoring) {
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    status.textContent = 'Monitoring Active';
+    status.textContent = 'Monitoring';
     status.className = 'status active';
-    metricsSection.style.display = 'block';
   } else {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     status.textContent = 'Inactive';
     status.className = 'status inactive';
-    // metricsSection.style.display = 'none';
   }
+  if (window.SamPanel) window.SamPanel.onMonitoringChanged(isMonitoring);
 }
 
 // Update the tiny status buttons for audio and play/pause state
@@ -1707,81 +1704,9 @@ function loadRecentFrames() {
   });
 }
 
+// Rendering lives in panel.js (hero, timeline, history list).
 function displayRecentFrames(logs) {
-  const container = document.getElementById('recentFramesContainer');
-  
-  // Filter logs that have images (LLM response is optional)
-  const logsWithImages = logs.filter(log => log.imageUrl);
-
-  if (logsWithImages.length === 0) {
-    container.innerHTML = '<div class="no-logs" style="grid-column: 1 / -1;">No frames captured yet. Start monitoring to see captured frames.</div>';
-    return;
-  }
-  
-  // Get the last 3 frames
-  const recentFrames = logsWithImages.slice(-3).reverse();
-  
-  console.log('[Football Ad Muter Popup] Displaying', recentFrames.length, 'recent frames');
-  
-  container.innerHTML = recentFrames.map((log, index) => {
-    const timestamp = new Date(log.timestamp).toLocaleTimeString();
-    
-    let resultClass = 'error';
-    let resultText = 'Analyzing...';
-    
-    if (log.result === true) {
-      resultClass = 'gameplay';
-      resultText = '✓ Gameplay';
-    } else if (log.result === false) {
-      resultClass = 'ad';
-      resultText = '⚠ Advertisement';
-    } else if (log.result === null && log.action) {
-      // System message/action log
-      resultClass = 'error';
-      resultText = '📝 ' + log.action.substring(0, 30) + (log.action.length > 30 ? '...' : '');
-    }
-    
-    // Extract LLM response text
-    let llmText = '';
-    if (log.llmResponse && !log.llmResponse.error) {
-      if (typeof log.llmResponse.response === 'string') {
-        llmText = log.llmResponse.response;
-      } else if (log.llmResponse.response?.message?.content) {
-        llmText = log.llmResponse.response.message.content;
-      }
-    } else if (log.llmResponse?.error) {
-      llmText = 'Error: ' + log.llmResponse.error;
-    } else if (log.action && !log.llmResponse) {
-      llmText = log.action;
-    }
-    
-    return `
-      <div class="frame-card" data-frame-url="${escapeHtml(log.imageUrl)}" title="Click to open in new tab">
-        <img src="${escapeHtml(log.imageUrl)}" alt="Captured frame" class="frame-card-image" />
-        <div class="frame-card-time">📅 ${timestamp}</div>
-        <div class="frame-card-result ${resultClass}">${resultText}</div>
-        ${llmText ? `<div class="frame-card-llm">${escapeHtml(llmText)}</div>` : ''}
-        <div class="frame-card-expand">Click to view full size</div>
-      </div>
-    `;
-  }).join('');
-  
-  console.log('[Football Ad Muter Popup] Frame cards HTML generated');
-  
-  // Add click event listeners to frame cards
-  setupFrameCardListeners();
-}
-
-function setupFrameCardListeners() {
-  const frameCards = document.querySelectorAll('.frame-card');
-  frameCards.forEach(card => {
-    card.addEventListener('click', () => {
-      const imageUrl = card.dataset.frameUrl;
-      if (imageUrl) {
-        openImageInNewTab(imageUrl);
-      }
-    });
-  });
+  if (window.SamPanel) window.SamPanel.render(logs);
 }
 
 function displayActivityLogs(logs) {

@@ -29,8 +29,17 @@ let lastDecision = {
   confidence: null,
   method: null,
   source: null,         // 'vision' | 'audio' | 'dom'
+  engine: null,         // 'LLM' | 'Signal' (a decision model would report its own name)
+  model: null,
+  latencyMs: null,
   at: 0
 };
+
+// Last frame grab, surfaced to the FAB as a brief "screenshot taken" tick.
+let lastCapture = { at: 0, method: null, skipped: false };
+
+// Per-session counters for the FAB (reset each time monitoring starts).
+let sessionStats = { frames: 0, ads: 0, gameplay: 0, errors: 0 };
 
 // Build a status snapshot for the FAB widget / external callers.
 function getSamStatus() {
@@ -57,6 +66,8 @@ function getSamStatus() {
     drmCaptureArmed,
     locked: videoLockEnabled,
     decision: lastDecision,
+    capture: lastCapture,
+    stats: sessionStats,
     queue
   };
 }
@@ -485,7 +496,9 @@ function startMonitoring(callback) {
     console.log('[Football Ad Muter] Sampler config:', adaptiveSampler.getStatus());
     logActivity(`✅ Monitoring started (adaptive sampling: ${checkIntervalTime/1000}s base)`, 'success');
 
-    lastDecision = { state: 'analyzing', isGameplay: null, confidence: null, method: null, source: null, at: Date.now() };
+    lastDecision = { state: 'analyzing', isGameplay: null, confidence: null, method: null, source: null, engine: null, model: null, latencyMs: null, at: Date.now() };
+  lastCapture = { at: 0, method: null, skipped: false };
+  sessionStats = { frames: 0, ads: 0, gameplay: 0, errors: 0 };
     try { if (window.__samFab) window.__samFab.ensure(); } catch (e) {}
     notifyFab();
 
@@ -1276,14 +1289,21 @@ function decideFromSignalsOnly(video) {
 
   saveLogEntry(!isAd, action || `Signal check: ${s.combined.source} (${pct}%)`, null, s);
 
+  const prevState = lastDecision.state;
   lastDecision = {
     state: isAd ? 'ad' : 'gameplay',
     isGameplay: !isAd,
     confidence: s.combined.confidence,
     method: `${s.combined.source} signal`,
     source: s.combined.source,
+    engine: 'Signal',
+    model: null,
+    latencyMs: null,
     at: Date.now()
   };
+  lastCapture = { at: Date.now(), method: 'signals', skipped: false };
+  sessionStats.frames++;
+  if (isAd) { if (prevState !== 'ad') sessionStats.ads++; } else { sessionStats.gameplay++; }
   notifyFab();
 }
 
@@ -1631,6 +1651,8 @@ async function performCapture(video) {
 
     // Mark this capture in the adaptive sampler
     adaptiveSampler.markCapture();
+    lastCapture = { at: Date.now(), method: captureResult.method, skipped: false };
+    notifyFab();
 
     // Cheap local scene-change check before spending an API call: if this
     // frame is a near-duplicate of the last one, skip the network round-trip
@@ -1650,6 +1672,8 @@ async function performCapture(video) {
         if (similar) {
           console.log(`[Football Ad Muter] Frame unchanged (${(similarity * 100).toFixed(1)}% similar) - skipping API call`);
           logActivity(`⏭️ Skipped analysis - unchanged frame (${(similarity * 100).toFixed(0)}% similar)`, 'info');
+          lastCapture.skipped = true;
+          notifyFab();
           return;
         }
       } catch (sigError) {
@@ -1765,7 +1789,10 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   if (response.error) {
     console.error('[Football Ad Muter] API error from background:', response.error);
     logActivity(`❌ API Error: ${response.error}`, 'error');
-    saveLogEntry(null, `API Error: ${response.error}`, imageDataUrl, response);
+    saveLogEntry(null, `API Error: ${response.error}`, imageDataUrl, Object.assign({}, response, { captureMethod }));
+    sessionStats.errors++;
+    lastDecision = { state: 'error', isGameplay: null, confidence: null, method: captureMethod || null, source: 'vision', engine: 'LLM', model: null, latencyMs: response.processingTime != null ? Math.round(response.processingTime) : null, error: response.error, at: Date.now() };
+    notifyFab();
     return;
   }
   
@@ -1815,18 +1842,25 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   }
   
   // Update FAB status
+  const prevDecisionState = lastDecision.state;
   lastDecision = {
     state: isGameplay === true ? 'gameplay' : (isGameplay === false ? 'ad' : 'inconclusive'),
     isGameplay: isGameplay,
     confidence: null,
     method: captureMethod || null,
     source: 'vision',
+    engine: 'LLM',
+    model: response.model || null,
+    latencyMs: response.processingTime != null ? Math.round(response.processingTime) : null,
     at: Date.now()
   };
+  sessionStats.frames++;
+  if (isGameplay === true) sessionStats.gameplay++;
+  if (isGameplay === false && prevDecisionState !== 'ad') sessionStats.ads++;
   notifyFab();
 
   // Save log entry with image data and full LLM response
-  saveLogEntry(isGameplay, action, imageDataUrl, response);
+  saveLogEntry(isGameplay, action, imageDataUrl, Object.assign({}, response, { captureMethod }));
   
   // Log sampler statistics
   const samplerStats = adaptiveSampler.getStats();
