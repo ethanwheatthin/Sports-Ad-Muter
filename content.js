@@ -1843,13 +1843,18 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   
   // Update FAB status
   const prevDecisionState = lastDecision.state;
+  // Decision models (Ollama /v1/systemone) report P(broadcast); show how sure they are.
+  const decisionProbability = response.response && typeof response.response.probability === 'number'
+    ? response.response.probability : null;
+  const decisionConfidence = decisionProbability != null
+    ? Math.max(decisionProbability, 1 - decisionProbability) : null;
   lastDecision = {
     state: isGameplay === true ? 'gameplay' : (isGameplay === false ? 'ad' : 'inconclusive'),
     isGameplay: isGameplay,
-    confidence: null,
+    confidence: decisionConfidence,
     method: captureMethod || null,
     source: 'vision',
-    engine: 'LLM',
+    engine: decisionProbability != null ? 'Decision model' : 'LLM',
     model: response.model || null,
     latencyMs: response.processingTime != null ? Math.round(response.processingTime) : null,
     at: Date.now()

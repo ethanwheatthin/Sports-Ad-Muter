@@ -47,6 +47,7 @@
     if (typeof x === 'string') return x;
     if (x && typeof x.response === 'string') return x.response;
     if (x && x.message && x.message.content) return x.message.content;
+    if (x && typeof x.thinking === 'string') return x.thinking;   // decision-model summary line
     return '';
   }
 
@@ -69,9 +70,14 @@
       source = 'Signal · ' + (r.combined.source || 'audio/dom');
       confidence = typeof r.combined.confidence === 'number' ? r.combined.confidence : null;
     } else if (r) {
-      source = r.engine || (r.model ? 'LLM' : '');
+      const p = r.response && typeof r.response === 'object' ? r.response.probability : null;
+      source = r.engine || (typeof p === 'number' ? 'Decision model' : (r.model ? 'LLM' : ''));
+      if (typeof p === 'number') {            // decision model: P(broadcast) -> gameplay vs ad
+        probs = { gameplay: p, ad: 1 - p };
+        confidence = Math.max(p, 1 - p);
+      }
       if (typeof r.confidence === 'number') confidence = r.confidence;
-      if (r.probabilities && typeof r.probabilities === 'object') {
+      if (!probs && r.probabilities && typeof r.probabilities === 'object') {
         const g = Number(r.probabilities.gameplay), a = Number(r.probabilities.ad);
         if (isFinite(g) && isFinite(a)) {
           probs = { gameplay: g, ad: a };
