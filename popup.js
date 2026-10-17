@@ -591,7 +591,7 @@ async function loadModels(ollamaUrl, savedModel) {
 
 // Load current settings
 // Note: analysisLogs uses storage.local (loaded separately) due to size of base64 images
-chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus', 'customPrompt', 'ollamaModel', 'detectionEngine', 'sportMode', 'monitoredTabId', 'apiProvider', 'geminiApiKey', 'geminiModel'], (result) => {
+chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus', 'customPrompt', 'ollamaModel', 'detectionEngine', 'sportMode', 'monitoredTabId', 'apiProvider', 'geminiApiKey', 'geminiModel', 'gameplayThreshold', 'adThreshold'], (result) => {
   console.log('[Football Ad Muter Popup] Loading settings:', result);
 
   // Set existing settings
@@ -623,6 +623,10 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus',
   // Convert milliseconds to seconds for display
   const intervalMs = result.checkInterval || 10000;
   document.getElementById('checkInterval').value = intervalMs / 1000;
+
+  // Decision thresholds are stored as fractions, shown as percentages
+  document.getElementById('gameplayThreshold').value = Math.round((result.gameplayThreshold ?? 0.75) * 100);
+  document.getElementById('adThreshold').value = Math.round((result.adThreshold ?? 0.4) * 100);
 
   // Load custom prompt — use saved value, or fall back to the saved mode's default
   document.getElementById('customPrompt').value = result.customPrompt || SPORT_MODE_PROMPTS[savedMode] || DEFAULT_PROMPT;
@@ -863,6 +867,11 @@ function collectSettings() {
   if (isNaN(checkIntervalSeconds) || checkIntervalSeconds < 1 || checkIntervalSeconds > 180) {
     return { error: 'Check interval must be between 1 and 180 seconds' };
   }
+  const gameplayPct = parseFloat(document.getElementById('gameplayThreshold').value);
+  const adPct = parseFloat(document.getElementById('adThreshold').value);
+  if (isNaN(gameplayPct) || isNaN(adPct) || gameplayPct > 100 || adPct < 0 || adPct >= gameplayPct) {
+    return { error: 'Thresholds must be percentages, with the ad threshold below the gameplay threshold' };
+  }
   if (!customPrompt) {
     return { error: 'Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.' };
   }
@@ -877,6 +886,8 @@ function collectSettings() {
       geminiApiKey: geminiApiKey,
       geminiModel: geminiModel,
       checkInterval: checkIntervalSeconds * 1000,
+      gameplayThreshold: gameplayPct / 100,
+      adThreshold: adPct / 100,
       customPrompt: customPrompt,
       ollamaModel: document.getElementById('ollamaModel').value || rememberedModel,
       detectionEngine: document.getElementById('detectionEngine').value,
@@ -973,7 +984,7 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 });
 
 // Auto-save whenever a settings field changes.
-['ollamaUrl', 'checkInterval', 'ollamaModel', 'detectionEngine', 'customPrompt', 'geminiApiKey', 'geminiModel'].forEach((id) => {
+['ollamaUrl', 'checkInterval', 'gameplayThreshold', 'adThreshold', 'ollamaModel', 'detectionEngine', 'customPrompt', 'geminiApiKey', 'geminiModel'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', scheduleAutoSave);
 });

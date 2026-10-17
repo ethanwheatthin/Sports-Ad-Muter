@@ -286,7 +286,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Get custom prompt, provider, and provider-specific settings from storage,
     // or use defaults. Storage is the source of truth so a stale content-script
     // value can't override what the user configured and tested in the popup.
-    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl', 'apiProvider', 'geminiApiKey', 'geminiModel', 'detectionEngine'], (storage) => {
+    chrome.storage.sync.get(['customPrompt', 'ollamaModel', 'ollamaUrl', 'apiProvider', 'geminiApiKey', 'geminiModel', 'detectionEngine', 'gameplayThreshold', 'adThreshold'], (storage) => {
       const customPrompt = storage.customPrompt || DEFAULT_PROMPT;
       const provider = storage.apiProvider || 'ollama';
 
@@ -302,7 +302,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         dlog('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
         // Route to the configured engine: generative vision model or decision model
         analysisPromise = storage.detectionEngine === 'decision'
-          ? analyzeWithDecisionModel(request.base64Image, ollamaUrl, ollamaModel)
+          ? analyzeWithDecisionModel(request.base64Image, ollamaUrl, ollamaModel, {
+              gameplay: typeof storage.gameplayThreshold === 'number' ? storage.gameplayThreshold : DECISION_THRESHOLDS.gameplay,
+              ad: typeof storage.adThreshold === 'number' ? storage.adThreshold : DECISION_THRESHOLDS.ad
+            })
           : analyzeWithOllama(request.base64Image, ollamaUrl, customPrompt, ollamaModel);
       }
 
@@ -445,7 +448,7 @@ async function testOllamaConnection(ollamaUrl) {
   }
 }
 
-async function analyzeWithDecisionModel(base64Image, ollamaUrl, model) {
+async function analyzeWithDecisionModel(base64Image, ollamaUrl, model, thresholds = DECISION_THRESHOLDS) {
   const startTime = Date.now();
 
   try {
@@ -469,7 +472,7 @@ async function analyzeWithDecisionModel(base64Image, ollamaUrl, model) {
     }
 
     const data = await response.json();
-    const { result, probability } = interpretDecision(data);
+    const { result, probability } = interpretDecision(data, thresholds);
     const label = probability === null ? 'no answer' : `broadcast ${(probability * 100).toFixed(1)}%`;
     dlog('[Football Ad Muter Background] Decision model:', label, '->', result);
 

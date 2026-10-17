@@ -36,8 +36,15 @@ test('probability between thresholds -> inconclusive', () => {
 });
 
 test('thresholds are inclusive at the boundaries', () => {
-  assert.strictEqual(interpretDecision(resp(0.6)).result, true);
+  assert.strictEqual(interpretDecision(resp(0.75)).result, true);
   assert.strictEqual(interpretDecision(resp(0.4)).result, false);
+});
+
+test('custom thresholds override the defaults', () => {
+  const th = { gameplay: 0.9, ad: 0.2 };
+  assert.strictEqual(interpretDecision(resp(0.8), th).result, null);
+  assert.strictEqual(interpretDecision(resp(0.9), th).result, true);
+  assert.strictEqual(interpretDecision(resp(0.2), th).result, false);
 });
 
 test('malformed response -> inconclusive', () => {

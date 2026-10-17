@@ -2,7 +2,7 @@
 // Pure helpers shared by the background service worker (importScripts) and tests.
 
 const DECISION_THRESHOLDS = {
-  gameplay: 0.6, // P(broadcast) at or above this -> gameplay (unmute)
+  gameplay: 0.75, // P(broadcast) at or above this -> gameplay (unmute)
   ad: 0.4        // P(broadcast) at or below this -> ad (mute); in between -> inconclusive
 };
 

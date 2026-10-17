@@ -208,6 +208,15 @@
     </section>
 
     <section class="card">
+      <div class="card-head"><span class="card-title">Decision thresholds</span></div>
+      <label for="gameplayThreshold">Gameplay (unmute) at or above</label>
+      <span class="interval-readout"><input type="number" id="gameplayThreshold" min="1" max="100" step="1" placeholder="75"> %</span>
+      <label for="adThreshold">Ad (mute) at or below</label>
+      <span class="interval-readout"><input type="number" id="adThreshold" min="0" max="99" step="1" placeholder="40"> %</span>
+      <div class="info">Decision model only. Broadcast probability between the two is inconclusive and leaves the mute state unchanged.</div>
+    </section>
+
+    <section class="card">
       <div class="card-head"><span class="card-title">What are you watching?</span></div>
       <select id="sportMode" class="visually-hidden" tabindex="-1" aria-hidden="true">
         <option value="general">General</option>
