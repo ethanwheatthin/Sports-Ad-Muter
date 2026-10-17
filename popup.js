@@ -573,6 +573,8 @@ async function loadModels(ollamaUrl, savedModel) {
     if (savedModel && models.includes(savedModel)) {
       select.value = savedModel;
     }
+    // Decision engine with no (or non-decision) model chosen: default to a clef model if present
+    selectClefIfDecision(false);
 
     statusDiv.textContent = `${models.length} model(s) available.`;
     console.log('[Football Ad Muter Popup] Models loaded:', models);
@@ -790,6 +792,24 @@ window.addEventListener('unload', () => {
   }
 });
 
+// When the decision engine is active, pick the clef model from the list if it exists.
+// force=true overrides the current selection (user just switched engines);
+// otherwise only replaces a blank or non-decision selection.
+function selectClefIfDecision(force) {
+  const engine = document.getElementById('detectionEngine');
+  const select = document.getElementById('ollamaModel');
+  if (!engine || !select || engine.value !== 'decision') return;
+  const current = select.options[select.selectedIndex];
+  if (!force && current && /\(decision\)$/.test(current.textContent) ) return;
+  const clef = Array.from(select.options).find((o) => /clef/i.test(o.value));
+  if (clef) {
+    select.value = clef.value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+const detectionEngineSelect = document.getElementById('detectionEngine');
+if (detectionEngineSelect) detectionEngineSelect.addEventListener('change', () => selectClefIfDecision(true));
+
 // Refresh models button
 const refreshModelsBtn = document.getElementById('refreshModelsBtn');
 if (refreshModelsBtn) {
@@ -816,6 +836,10 @@ function updateProviderFieldsVisibility() {
   const provider = document.getElementById('apiProvider').value || 'ollama';
   document.getElementById('ollamaFields').style.display = provider === 'gemini' ? 'none' : 'block';
   document.getElementById('geminiFields').style.display = provider === 'gemini' ? 'block' : 'none';
+  // Keep the Test connection button right next to the active provider's input.
+  const slot = document.getElementById(provider === 'gemini' ? 'geminiTestSlot' : 'ollamaTestSlot');
+  const testBtn = document.getElementById('testApiBtn');
+  if (slot && testBtn && testBtn.parentElement !== slot) slot.appendChild(testBtn);
 }
 
 // Read + validate the settings fields. Returns { settings } or { error }.
@@ -827,8 +851,8 @@ function collectSettings() {
   const customPrompt = document.getElementById('customPrompt').value.trim();
   const checkIntervalSeconds = parseFloat(document.getElementById('checkInterval').value);
 
-  if (isNaN(checkIntervalSeconds) || checkIntervalSeconds < 10 || checkIntervalSeconds > 180) {
-    return { error: 'Check interval must be between 10 and 180 seconds' };
+  if (isNaN(checkIntervalSeconds) || checkIntervalSeconds < 1 || checkIntervalSeconds > 180) {
+    return { error: 'Check interval must be between 1 and 180 seconds' };
   }
   if (!customPrompt) {
     return { error: 'Custom prompt cannot be empty. Click "Reset to Default" to restore the original prompt.' };

@@ -159,7 +159,10 @@
 
       <div id="ollamaFields" class="field-group">
         <label for="ollamaUrl">API URL</label>
-        <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
+        <div class="inline" id="ollamaTestSlot">
+          <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
+          <button id="testApiBtn" class="btn-ghost">Test connection</button>
+        </div>
         <label for="detectionEngine">Detection engine</label>
         <select id="detectionEngine">
           <option value="generative">Generative vision model (uses the prompt)</option>
@@ -178,7 +181,9 @@
 
       <div id="geminiFields" class="field-group" style="display:none;">
         <label for="geminiApiKey">API key <a class="hint-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get a free key</a></label>
-        <input type="password" id="geminiApiKey" placeholder="AIza...">
+        <div class="inline" id="geminiTestSlot">
+          <input type="password" id="geminiApiKey" placeholder="AIza...">
+        </div>
         <label for="geminiModel">Model</label>
         <select id="geminiModel">
           <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (highest free quota)</option>
@@ -186,9 +191,6 @@
         </select>
       </div>
 
-      <div class="row-actions">
-        <button id="testApiBtn" class="btn-ghost">Test connection</button>
-      </div>
       <div id="connectionStatus" class="connection-status" style="display:none;"></div>
       <div id="startOllamaHint" class="start-ollama-hint" style="display:none;">
         <div class="info">Ollama doesn't seem to be running. Start it with:</div>
@@ -199,10 +201,10 @@
     <section class="card">
       <div class="card-head">
         <span class="card-title">Check interval</span>
-        <span class="interval-readout"><input type="number" id="checkInterval" min="10" max="180" step="0.5" placeholder="10"> s</span>
+        <span class="interval-readout"><input type="number" id="checkInterval" min="1" max="180" step="0.5" placeholder="10"> s</span>
       </div>
-      <input type="range" id="intervalSlider" min="10" max="180" step="1" value="10">
-      <div class="info">How often a frame is captured and analyzed (10–180 s).</div>
+      <input type="range" id="intervalSlider" min="1" max="180" step="1" value="10">
+      <div class="info">How often a frame is captured and analyzed (1–180 s).</div>
     </section>
 
     <section class="card">

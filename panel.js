@@ -316,7 +316,7 @@
     document.querySelectorAll('#sportChips button').forEach((b) =>
       b.classList.toggle('active', b.dataset.mode === mode));
     const n = parseFloat($('checkInterval').value);
-    if (isFinite(n)) $('intervalSlider').value = Math.min(180, Math.max(10, n));
+    if (isFinite(n)) $('intervalSlider').value = Math.min(180, Math.max(1, n));
   }
 
   function wireSettings() {
