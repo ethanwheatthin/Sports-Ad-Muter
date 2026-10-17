@@ -250,6 +250,10 @@
     const detail = expanded ? detailText(s) : '';
     const stats = expanded ? statsText(s) : '';
     const flashing = Date.now() < flashUntil;
+    // A rebuild mid-flash (e.g. the decision lands right after the capture) would
+    // restart the CSS animation and look like a double flash, so resume it in place.
+    const flashElapsed = flashing ? Math.max(0, 1400 - (flashUntil - Date.now())) : 0;
+    const flashDelay = `animation-delay:-${flashElapsed}ms;`;
     const skipped = !!(flashing && s && s.capture && s.capture.skipped);
     const flip = pos.right > window.innerWidth / 2;   // keep the chip on-screen near the left edge
 
@@ -296,10 +300,10 @@
             ${chip.src ? `<span class="src">${escapeHtml(chip.src)}</span>` : ''}
           </div>` : ''}
           <button class="fab" data-act="fab" title="${escapeHtml(txt.label)}${txt.sub ? ' — ' + escapeHtml(txt.sub) : ''}">
-            <span class="ring ${ringPulse(s) ? 'pulse' : ''} ${flashing ? 'flash' : ''}" style="--ring:${ringColor(s)}"></span>
+            <span class="ring ${ringPulse(s) ? 'pulse' : ''} ${flashing ? 'flash' : ''}" style="--ring:${ringColor(s)};${flashing ? flashDelay : ''}"></span>
             ${centerIcon(s)}
             ${s && s.drm ? '<span class="badge">🔒</span>' : ''}
-            ${flashing ? `<span class="cam ${skipped ? 'skipped' : ''}" title="Frame captured">${ICON_CAM}</span>` : ''}
+            ${flashing ? `<span class="cam ${skipped ? 'skipped' : ''}" style="${flashDelay}" title="Frame captured">${ICON_CAM}</span>` : ''}
           </button>
         </div>
       </div>`;
