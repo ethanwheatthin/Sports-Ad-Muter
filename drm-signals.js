@@ -116,7 +116,7 @@
       const cs = video.captureStream ? video.captureStream()
         : (video.mozCaptureStream ? video.mozCaptureStream() : null);
       if (!cs || cs.getAudioTracks().length === 0) {
-        console.log(LOG, 'no audio track from captureStream - audio heuristic disabled');
+        dlog(LOG, 'no audio track from captureStream - audio heuristic disabled');
         return;
       }
       mediaStream = cs;
@@ -127,10 +127,10 @@
       analyser.smoothingTimeConstant = 0.6;
       srcNode.connect(analyser); // analysis only, not routed to destination
       freqBuf = new Uint8Array(analyser.frequencyBinCount);
-      console.log(LOG, 'audio analyser started');
+      dlog(LOG, 'audio analyser started');
       sample();
     } catch (e) {
-      console.log(LOG, 'audio analyser unavailable:', e.message);
+      dlog(LOG, 'audio analyser unavailable:', e.message);
       stopAudio();
     }
   }
@@ -228,5 +228,5 @@
     }
   };
 
-  console.log(LOG, 'loaded for', host, SITE);
+  dlog(LOG, 'loaded for', host, SITE);
 })();

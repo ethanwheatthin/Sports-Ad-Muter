@@ -2,7 +2,7 @@
 
 // Open the side panel when the toolbar icon is clicked (instead of a popup).
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-importScripts('decision-model.js');
+importScripts('debug-log.js', 'decision-model.js');
 
 // Default AI prompt
 const DEFAULT_PROMPT = `SPORTS BROADCAST DETECTOR - RAPID MODE
@@ -153,16 +153,16 @@ function keepServiceWorkerAlive() {
   keepAliveInterval = setInterval(() => {
     chrome.runtime.getPlatformInfo(() => {
       if (chrome.runtime.lastError) {
-        console.log('[Football Ad Muter Background] Service worker keepalive check failed');
+        dlog('[Football Ad Muter Background] Service worker keepalive check failed');
       } else {
-        console.log('[Football Ad Muter Background] Service worker keepalive ping');
+        dlog('[Football Ad Muter Background] Service worker keepalive ping');
       }
     });
   }, 25000); // 25 seconds
 }
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[Football Ad Muter Background] Service worker started');
+  dlog('[Football Ad Muter Background] Service worker started');
   keepServiceWorkerAlive();
 });
 
@@ -180,16 +180,16 @@ chrome.runtime.onInstalled.addListener(() => {
     sportMode: 'american'
   });
   
-  console.log('[Football Ad Muter Background] Extension installed');
+  dlog('[Football Ad Muter Background] Extension installed');
   keepServiceWorkerAlive();
 });
 
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[Football Ad Muter Background] Received message:', request.action);
+  dlog('[Football Ad Muter Background] Received message:', request.action);
   
   if (request.action === 'ping') {
-    console.log('[Football Ad Muter Background] Ping received, sending pong');
+    dlog('[Football Ad Muter Background] Ping received, sending pong');
     sendResponse({ status: 'pong' });
     return false; // Synchronous response
   }
@@ -200,7 +200,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'drmCaptureEnded') {
-    console.log('[Football Ad Muter Background] DRM capture stream ended');
+    dlog('[Football Ad Muter Background] DRM capture stream ended');
     drmCapture = { armed: false, tabId: null };
     return false;
   }
@@ -265,19 +265,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getTabId') {
     // Return the tab ID of the sender
     if (sender.tab && sender.tab.id) {
-      console.log('[Football Ad Muter Background] Returning tab ID:', sender.tab.id);
+      dlog('[Football Ad Muter Background] Returning tab ID:', sender.tab.id);
       sendResponse({ tabId: sender.tab.id });
     } else {
-      console.log('[Football Ad Muter Background] No tab ID available');
+      dlog('[Football Ad Muter Background] No tab ID available');
       sendResponse({ tabId: null });
     }
     return false; // Synchronous response
   }
   
   if (request.action === 'analyzeImage') {
-    console.log('[Football Ad Muter Background] Processing image analysis request');
-    console.log('[Football Ad Muter Background] Image size:', request.base64Image.length);
-    console.log('[Football Ad Muter Background] API Metrics:', apiMetrics);
+    dlog('[Football Ad Muter Background] Processing image analysis request');
+    dlog('[Football Ad Muter Background] Image size:', request.base64Image.length);
+    dlog('[Football Ad Muter Background] API Metrics:', apiMetrics);
     
     // Increment request counter
     apiMetrics.totalRequests++;
@@ -292,14 +292,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       let analysisPromise;
       if (provider === 'gemini') {
-        console.log('[Football Ad Muter Background] Using Gemini model:', storage.geminiModel);
+        dlog('[Football Ad Muter Background] Using Gemini model:', storage.geminiModel);
         analysisPromise = analyzeWithGemini(request.base64Image, storage.geminiApiKey || '', customPrompt, storage.geminiModel || 'gemini-3.5-flash-lite');
       } else {
         const ollamaModel = storage.ollamaModel || 'qwen3.5:0.8b';
         let ollamaUrl = storage.ollamaUrl || request.ollamaUrl || 'http://localhost:11434';
         ollamaUrl = ollamaUrl.trim().replace(/\/+$/, ''); // trim trailing slash
         if (ollamaUrl.includes('/ollama/api')) ollamaUrl = 'http://localhost:11434';
-        console.log('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
+        dlog('[Football Ad Muter Background] Using Ollama URL:', ollamaUrl);
         // Route to the configured engine: generative vision model or decision model
         analysisPromise = storage.detectionEngine === 'decision'
           ? analyzeWithDecisionModel(request.base64Image, ollamaUrl, ollamaModel)
@@ -309,7 +309,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Handle async operation properly
       analysisPromise
         .then(analysisResult => {
-        console.log('[Football Ad Muter Background] Analysis complete:', analysisResult);
+        dlog('[Football Ad Muter Background] Analysis complete:', analysisResult);
         
         // Update metrics
         if (analysisResult.error) {
@@ -324,7 +324,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             apiMetrics.totalProcessingTime / (apiMetrics.successfulRequests + apiMetrics.failedRequests);
         }
         
-        console.log('[Football Ad Muter Background] Updated API Metrics:', apiMetrics);
+        dlog('[Football Ad Muter Background] Updated API Metrics:', apiMetrics);
         
         // Return the full analysis result object (includes result, model, response, processingTime, etc.)
         sendResponse(analysisResult);
@@ -340,13 +340,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'getApiMetrics') {
-    console.log('[Football Ad Muter Background] API metrics requested');
+    dlog('[Football Ad Muter Background] API metrics requested');
     sendResponse({ metrics: apiMetrics });
     return false;
   }
   
   if (request.action === 'resetApiMetrics') {
-    console.log('[Football Ad Muter Background] Resetting API metrics');
+    dlog('[Football Ad Muter Background] Resetting API metrics');
     apiMetrics = {
       totalRequests: 0,
       successfulRequests: 0,
@@ -361,12 +361,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   if (request.action === 'logUpdate') {
     // Handle log update messages from content script
-    console.log('[Football Ad Muter Background] Log update message received');
+    dlog('[Football Ad Muter Background] Log update message received');
     return false; // No response needed
   }
   
   if (request.action === 'testApiConnection') {
-    console.log('[Football Ad Muter Background] API connection test requested for provider:', request.provider);
+    dlog('[Football Ad Muter Background] API connection test requested for provider:', request.provider);
 
     // Handle async operation properly
     const testPromise = request.provider === 'gemini'
@@ -375,7 +375,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     testPromise
       .then(result => {
-        console.log('[Football Ad Muter Background] API test complete:', result);
+        dlog('[Football Ad Muter Background] API test complete:', result);
         sendResponse({ result: result, error: null });
       })
       .catch(error => {
@@ -391,8 +391,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function testOllamaConnection(ollamaUrl) {
   try {
-    console.log('[Football Ad Muter Background] 🔍 Testing Ollama API connection...');
-    console.log('[Football Ad Muter Background] Testing URL:', `${ollamaUrl}/api/tags`);
+    dlog('[Football Ad Muter Background] 🔍 Testing Ollama API connection...');
+    dlog('[Football Ad Muter Background] Testing URL:', `${ollamaUrl}/api/tags`);
     
     // Add timeout and better error handling
     const controller = new AbortController();
@@ -410,8 +410,8 @@ async function testOllamaConnection(ollamaUrl) {
     
     clearTimeout(timeoutId);
     
-    console.log('[Football Ad Muter Background] API test response status:', response.status, response.statusText);
-    console.log('[Football Ad Muter Background] CORS headers:', {
+    dlog('[Football Ad Muter Background] API test response status:', response.status, response.statusText);
+    dlog('[Football Ad Muter Background] CORS headers:', {
       'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
       'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
       'access-control-allow-headers': response.headers.get('access-control-allow-headers')
@@ -424,7 +424,7 @@ async function testOllamaConnection(ollamaUrl) {
     }
     
     const data = await response.json();
-    console.log('[Football Ad Muter Background] API test response:', data);
+    dlog('[Football Ad Muter Background] API test response:', data);
     
     const availableModels = data.models ? data.models.map(m => m.name) : [];
 
@@ -471,7 +471,7 @@ async function analyzeWithDecisionModel(base64Image, ollamaUrl, model) {
     const data = await response.json();
     const { result, probability } = interpretDecision(data);
     const label = probability === null ? 'no answer' : `broadcast ${(probability * 100).toFixed(1)}%`;
-    console.log('[Football Ad Muter Background] Decision model:', label, '->', result);
+    dlog('[Football Ad Muter Background] Decision model:', label, '->', result);
 
     return {
       result,
@@ -495,14 +495,14 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
   const startTime = Date.now();
 
   try {
-    console.log('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
-    console.log('[Football Ad Muter Background] Using model:', ollamaModel);
-    console.log('[Football Ad Muter Background] Using custom prompt:', customPrompt.substring(0, 100) + '...');
+    dlog('[Football Ad Muter Background] 🤖 Starting Ollama API analysis...');
+    dlog('[Football Ad Muter Background] Using model:', ollamaModel);
+    dlog('[Football Ad Muter Background] Using custom prompt:', customPrompt.substring(0, 100) + '...');
 
     const prompt = customPrompt;
 
-    console.log('[Football Ad Muter Background] Making API request to:', `${ollamaUrl}/api/generate`);
-    console.log('[Football Ad Muter Background] Request payload size:', {
+    dlog('[Football Ad Muter Background] Making API request to:', `${ollamaUrl}/api/generate`);
+    dlog('[Football Ad Muter Background] Request payload size:', {
       model: ollamaModel,
       imageLength: base64Image.length,
       stream: false
@@ -547,8 +547,8 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     
     const processingTime = Date.now() - startTime;
     
-    console.log('[Football Ad Muter Background] API response status:', response.status, response.statusText);
-    console.log('[Football Ad Muter Background] CORS headers:', {
+    dlog('[Football Ad Muter Background] API response status:', response.status, response.statusText);
+    dlog('[Football Ad Muter Background] CORS headers:', {
       'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
       'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
       'access-control-allow-headers': response.headers.get('access-control-allow-headers')
@@ -561,10 +561,10 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     }
     
     const data = await response.json();
-    console.log('[Football Ad Muter Background] Full API response:', data);
+    dlog('[Football Ad Muter Background] Full API response:', data);
     
     const result = data.response.trim().toLowerCase();
-    console.log('[Football Ad Muter Background] Parsed result:', `"${result}"`);
+    dlog('[Football Ad Muter Background] Parsed result:', `"${result}"`);
 
     // Parse the response and return full details for logging. Match the token
     // anywhere rather than requiring an exact string, so a model that adds
@@ -572,10 +572,10 @@ async function analyzeWithOllama(base64Image, ollamaUrl, customPrompt = DEFAULT_
     let isGameplay = null;
 
     if (/\btrue\b/.test(result)) {
-      console.log('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
+      dlog('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
       isGameplay = true;
     } else if (/\bfalse\b/.test(result)) {
-      console.log('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
+      dlog('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
       isGameplay = false;
     } else {
       console.warn('[Football Ad Muter Background] ❓ Unexpected analysis response:', result);
@@ -626,7 +626,7 @@ async function testGeminiConnection(geminiApiKey, geminiModel) {
   }
 
   try {
-    console.log('[Football Ad Muter Background] 🔍 Testing Gemini API connection...');
+    dlog('[Football Ad Muter Background] 🔍 Testing Gemini API connection...');
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -679,8 +679,8 @@ async function analyzeWithGemini(base64Image, geminiApiKey, customPrompt = DEFAU
   }
 
   try {
-    console.log('[Football Ad Muter Background] 🤖 Starting Gemini API analysis...');
-    console.log('[Football Ad Muter Background] Using model:', geminiModel);
+    dlog('[Football Ad Muter Background] 🤖 Starting Gemini API analysis...');
+    dlog('[Football Ad Muter Background] Using model:', geminiModel);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout, same as Ollama
@@ -713,7 +713,7 @@ async function analyzeWithGemini(base64Image, geminiApiKey, customPrompt = DEFAU
 
     const processingTime = Date.now() - startTime;
 
-    console.log('[Football Ad Muter Background] Gemini response status:', response.status, response.statusText);
+    dlog('[Football Ad Muter Background] Gemini response status:', response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -722,19 +722,19 @@ async function analyzeWithGemini(base64Image, geminiApiKey, customPrompt = DEFAU
     }
 
     const data = await response.json();
-    console.log('[Football Ad Muter Background] Full Gemini response:', data);
+    dlog('[Football Ad Muter Background] Full Gemini response:', data);
 
     const candidate = data.candidates && data.candidates[0];
     const text = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
     const result = (text || '').trim().toLowerCase();
-    console.log('[Football Ad Muter Background] Parsed result:', `"${result}"`);
+    dlog('[Football Ad Muter Background] Parsed result:', `"${result}"`);
 
     let isGameplay = null;
     if (/\btrue\b/.test(result)) {
-      console.log('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
+      dlog('[Football Ad Muter Background] ✅ Analysis result: GAMEPLAY detected');
       isGameplay = true;
     } else if (/\bfalse\b/.test(result)) {
-      console.log('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
+      dlog('[Football Ad Muter Background] ⚠️ Analysis result: ADVERTISEMENT detected');
       isGameplay = false;
     } else {
       console.warn('[Football Ad Muter Background] ❓ Unexpected analysis response:', result, candidate && candidate.finishReason);

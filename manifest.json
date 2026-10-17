@@ -20,7 +20,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["request-queue.js", "adaptive-sampler.js", "drm-signals.js", "content.js", "fab.js"],
+      "js": ["debug-log.js", "log-store.js", "request-queue.js", "adaptive-sampler.js", "drm-signals.js", "content.js", "fab.js"],
       "run_at": "document_idle"
     }
   ],
