@@ -107,7 +107,7 @@ function getSamStatus() {
   let hasVideo = false;
   let muted = null;
   try {
-    const v = getActiveVideo();
+    const v = getActiveVideo({ allowPaused: true });
     if (v) { hasVideo = true; muted = !!v.muted; }
   } catch (e) { /* ignore */ }
 
@@ -155,7 +155,7 @@ function ensureCurrentTabId() {
       chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
         if (response && response.tabId) {
           currentTabId = response.tabId;
-          console.log('[Football Ad Muter] Content script initialized in tab:', currentTabId);
+          dlog('[Football Ad Muter] Content script initialized in tab:', currentTabId);
         }
         resolve(currentTabId);
       });
@@ -200,7 +200,7 @@ function initializeQueue() {
       requestTimeout: 30000, // 30 second timeout
       minTimeBetweenRequests: 2000 // 2 seconds between requests
     });
-    console.log('[Football Ad Muter] Request queue initialized');
+    dlog('[Football Ad Muter] Request queue initialized');
   }
   
   if (!adaptiveSampler) {
@@ -210,7 +210,7 @@ function initializeQueue() {
       normalInterval: checkIntervalTime || 8000, // Use user setting or 8 seconds
       sceneChangeThreshold: 0.15 // 15% change triggers capture
     });
-    console.log('[Football Ad Muter] Adaptive sampler initialized');
+    dlog('[Football Ad Muter] Adaptive sampler initialized');
   }
 }
 
@@ -225,7 +225,7 @@ const currentSite = {
   isDrmProtected: false // Track if current content has DRM protection
 };
 
-console.log('[Football Ad Muter] Detected site:', {
+dlog('[Football Ad Muter] Detected site:', {
   hostname: window.location.hostname,
   isPeacock: currentSite.isPeacock,
   isYouTube: currentSite.isYouTube,
@@ -236,21 +236,21 @@ console.log('[Football Ad Muter] Detected site:', {
 
 // Load settings from storage
 chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) => {
-  console.log('[Football Ad Muter] Loading settings from storage:', result);
+  dlog('[Football Ad Muter] Loading settings from storage:', result);
   
   if (result.ollamaUrl) {
     ollamaUrl = result.ollamaUrl;
     // Clean up any old OpenWebUI URLs that might be cached
     if (ollamaUrl.includes('/ollama/api')) {
       ollamaUrl = 'http://localhost:11434';
-      console.log('[Football Ad Muter] Detected old OpenWebUI URL, reset to:', ollamaUrl);
+      dlog('[Football Ad Muter] Detected old OpenWebUI URL, reset to:', ollamaUrl);
     }
-    console.log('[Football Ad Muter] Ollama URL set to:', ollamaUrl);
+    dlog('[Football Ad Muter] Ollama URL set to:', ollamaUrl);
   }
   
   if (result.checkInterval) {
     checkIntervalTime = result.checkInterval;
-    console.log('[Football Ad Muter] Check interval set to:', checkIntervalTime, 'ms');
+    dlog('[Football Ad Muter] Check interval set to:', checkIntervalTime, 'ms');
   }
   
   // Log that the extension loaded
@@ -260,89 +260,45 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled'], (result) =>
   // each session (avoids surprise captures / tab-capture prompts on reload).
 });
 
+// Log persistence. Both logs go through a write-behind store (log-store.js):
+// entries are appended to an in-memory cache and flushed to storage.local at
+// most once per 250ms, instead of re-reading and re-writing the whole log
+// (images included) on every entry. storage.local, not sync - sync caps each
+// item at 8KB.
+function notifyPopup(action) {
+  try {
+    chrome.runtime.sendMessage({ action }, () => void chrome.runtime.lastError);
+  } catch (error) {
+    // Popup not available
+  }
+}
+
+const storageLastError = () => chrome.runtime.lastError || null;
+const activityStore = SamLogStore.createLogStore(chrome.storage.local, 'activityLogs', {
+  max: 100,
+  lastError: storageLastError,
+  afterWrite: () => notifyPopup('activityUpdate')
+});
+const analysisStore = SamLogStore.createLogStore(chrome.storage.local, 'analysisLogs', {
+  max: 50,
+  lastError: storageLastError,
+  afterWrite: () => notifyPopup('logUpdate')
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.activityLogs) activityStore.external(changes.activityLogs.newValue);
+  if (changes.analysisLogs) analysisStore.external(changes.analysisLogs.newValue);
+});
+
 // Activity logging function - logs important events to the popup
 function logActivity(message, type = 'info') {
-  const activityEntry = {
-    timestamp: Date.now(),
-    message: message,
-    type: type // 'info', 'success', 'warning', 'error'
-  };
-  
-  // storage.local, not storage.sync — sync caps each item at 8KB, and 100
-  // entries of log text (plus emoji) routinely blows past that.
-  chrome.storage.local.get(['activityLogs'], (storage) => {
-    if (chrome.runtime.lastError) {
-      console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
-      return;
-    }
-
-    const logs = storage.activityLogs || [];
-    logs.push(activityEntry);
-
-    // Keep only the last 100 entries
-    const trimmedLogs = logs.slice(-100);
-
-    chrome.storage.local.set({ activityLogs: trimmedLogs }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
-        return;
-      }
-
-      // Notify popup to refresh activity logs if it's open
-      try {
-        chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {
-          // Ignore errors - popup might not be open
-          if (chrome.runtime.lastError) {
-            // This is normal when popup is closed, don't log
-          }
-        });
-      } catch (error) {
-        // Ignore - popup not available
-      }
-    });
-  });
+  activityStore.append({ timestamp: Date.now(), message: message, type: type });
 }
 
 // Activity logging function with image attachment
 function logActivityWithImage(message, type = 'info', imageDataUrl = null) {
-  const activityEntry = {
-    timestamp: Date.now(),
-    message: message,
-    type: type,
-    imageUrl: imageDataUrl
-  };
-  
-  chrome.storage.local.get(['activityLogs'], (storage) => {
-    if (chrome.runtime.lastError) {
-      console.error('[Football Ad Muter] Error reading activityLogs from storage:', chrome.runtime.lastError);
-      return;
-    }
-
-    const logs = storage.activityLogs || [];
-    logs.push(activityEntry);
-
-    // Keep only the last 100 entries
-    const trimmedLogs = logs.slice(-100);
-
-    chrome.storage.local.set({ activityLogs: trimmedLogs }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('[Football Ad Muter] Error saving activityLogs to storage:', chrome.runtime.lastError);
-        return;
-      }
-
-      // Notify popup to refresh activity logs if it's open
-      try {
-        chrome.runtime.sendMessage({ action: 'activityUpdate' }, (response) => {
-          // Ignore errors - popup might not be open
-          if (chrome.runtime.lastError) {
-            // This is normal when popup is closed, don't log
-          }
-        });
-      } catch (error) {
-        // Ignore - popup not available
-      }
-    });
-  });
+  activityStore.append({ timestamp: Date.now(), message: message, type: type, imageUrl: imageDataUrl });
 }
 
 // One-off capture for the panel's "Capture Test Frame" button. Runs the same
@@ -385,14 +341,14 @@ async function runCaptureTest() {
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[Football Ad Muter] Received message from popup:', request);
+  dlog('[Football Ad Muter] Received message from popup:', request);
   
   if (request.action === 'ping') {
-    console.log('[Football Ad Muter] Ping received from debug page');
+    dlog('[Football Ad Muter] Ping received from debug page');
     sendResponse({ status: 'pong' });
     return false;
   } else if (request.action === 'start') {
-    console.log('[Football Ad Muter] Start command received');
+    dlog('[Football Ad Muter] Start command received');
     // Wait for the real outcome instead of replying optimistically - a wrong-
     // tab rejection or any other failure must be visible to the caller, not
     // silently swallowed while the UI reports success.
@@ -405,7 +361,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   } else if (request.action === 'stop') {
-    console.log('[Football Ad Muter] Stop command received');
+    dlog('[Football Ad Muter] Stop command received');
     stopMonitoring();
     sendResponse({ status: 'stopped' });
     return false;
@@ -413,7 +369,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ monitoring: isMonitoring });
     return false;
   } else if (request.action === 'updateSettings') {
-    console.log('[Football Ad Muter] Settings update received:', {
+    dlog('[Football Ad Muter] Settings update received:', {
       newOllamaUrl: request.ollamaUrl,
       newCheckInterval: request.checkInterval
     });
@@ -428,14 +384,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     if (isMonitoring) {
-      console.log('[Football Ad Muter] Restarting monitoring with new settings');
+      dlog('[Football Ad Muter] Restarting monitoring with new settings');
       stopMonitoring();
       startMonitoring();
     }
     sendResponse({ status: 'updated' });
     return false;
   } else if (request.action === 'resetVideo') {
-    console.log('[Football Ad Muter] Reset video command received');
+    dlog('[Football Ad Muter] Reset video command received');
     resetVideoPlayer();
     sendResponse({ status: 'reset' });
     return false;
@@ -480,14 +436,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   } else if (request.action === 'lockVideo') {
     // Lock to the current video element
-    console.log('[Football Ad Muter] Lock video command received');
+    dlog('[Football Ad Muter] Lock video command received');
     try {
       const video = getActiveVideo();
       if (video) {
         lockToVideo(video);
         sendResponse({ status: 'locked', found: true });
       } else {
-        console.log('[Football Ad Muter] No video found to lock');
+        dlog('[Football Ad Muter] No video found to lock');
         sendResponse({ status: 'no_video', found: false });
       }
     } catch (err) {
@@ -497,7 +453,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   } else if (request.action === 'unlockVideo') {
     // Unlock video and resume normal detection
-    console.log('[Football Ad Muter] Unlock video command received');
+    dlog('[Football Ad Muter] Unlock video command received');
     try {
       unlockVideo();
       sendResponse({ status: 'unlocked' });
@@ -526,7 +482,7 @@ function startMonitoring(callback) {
   const done = (result) => { if (callback) callback(result); };
 
   if (isMonitoring) {
-    console.log('[Football Ad Muter] Monitoring already active, ignoring start request');
+    dlog('[Football Ad Muter] Monitoring already active, ignoring start request');
     logActivity('⚠️ Monitoring already active', 'warning');
     done({ started: true, reason: 'already-active' });
     return;
@@ -538,23 +494,23 @@ function startMonitoring(callback) {
 
     // Only start if we're in the monitored tab or no tab is set
     if (monitoredTabId && currentTabId && monitoredTabId !== currentTabId) {
-      console.log('[Football Ad Muter] ⚠️ Not the monitored tab. This tab:', currentTabId, 'Monitored tab:', monitoredTabId);
-      console.log('[Football Ad Muter] Ignoring start command - monitoring is active in another tab');
+      dlog('[Football Ad Muter] ⚠️ Not the monitored tab. This tab:', currentTabId, 'Monitored tab:', monitoredTabId);
+      dlog('[Football Ad Muter] Ignoring start command - monitoring is active in another tab');
       logActivity('⚠️ Monitoring is already running in another tab', 'warning');
       done({ started: false, reason: 'wrong-tab' });
       return;
     }
 
-    console.log('[Football Ad Muter] ✅ Correct tab - starting monitoring');
+    dlog('[Football Ad Muter] ✅ Correct tab - starting monitoring');
 
     // Initialize queue and sampler
     initializeQueue();
 
     isMonitoring = true;
-    console.log('[Football Ad Muter] Monitoring started - checking every', checkIntervalTime, 'ms');
-    console.log('[Football Ad Muter] Using API URL:', ollamaUrl);
-    console.log('[Football Ad Muter] Queue config:', requestQueue.getStatus());
-    console.log('[Football Ad Muter] Sampler config:', adaptiveSampler.getStatus());
+    dlog('[Football Ad Muter] Monitoring started - checking every', checkIntervalTime, 'ms');
+    dlog('[Football Ad Muter] Using API URL:', ollamaUrl);
+    dlog('[Football Ad Muter] Queue config:', requestQueue.getStatus());
+    dlog('[Football Ad Muter] Sampler config:', adaptiveSampler.getStatus());
     logActivity(`✅ Monitoring started (adaptive sampling: ${checkIntervalTime/1000}s base)`, 'success');
 
     lastDecision = { state: 'analyzing', isGameplay: null, confidence: null, method: null, source: null, engine: null, model: null, latencyMs: null, at: Date.now() };
@@ -577,16 +533,16 @@ function startMonitoring(callback) {
     // so the watchdog only fires when the interval itself has stopped
     // running, not just when there's nothing to capture.
     lastLoopTick = Date.now();
-    console.log('[Football Ad Muter] Running video check...');
+    dlog('[Football Ad Muter] Running video check...');
 
     // Use locked video if lock is enabled and video is still valid
     let video = null;
     if (videoLockEnabled && lockedVideo) {
       if (isVideoElementValid(lockedVideo)) {
         video = lockedVideo;
-        console.log('[Football Ad Muter] 🔒 Using locked video element');
+        dlog('[Football Ad Muter] 🔒 Using locked video element');
       } else {
-        console.log('[Football Ad Muter] ⚠️ Locked video is no longer valid, releasing lock');
+        dlog('[Football Ad Muter] ⚠️ Locked video is no longer valid, releasing lock');
         unlockVideo();
         video = getActiveVideo();
       }
@@ -595,10 +551,10 @@ function startMonitoring(callback) {
     }
     
     if (!video) {
-      console.log('[Football Ad Muter] No video element found');
+      dlog('[Football Ad Muter] No video element found');
       consecutiveFailures++;
       if (consecutiveFailures > 5) {
-        console.log('[Football Ad Muter] ⚠️ No video found for 5 consecutive checks - might need to wait for page load');
+        dlog('[Football Ad Muter] ⚠️ No video found for 5 consecutive checks - might need to wait for page load');
         logActivity('⚠️ No video found for multiple checks', 'warning');
       }
       return;
@@ -609,15 +565,15 @@ function startMonitoring(callback) {
     
     // Perform DRM check once when we first find a video
     if (!drmCheckPerformed && video) {
-      console.log('[Football Ad Muter] Running initial DRM protection check...');
+      dlog('[Football Ad Muter] Running initial DRM protection check...');
       checkForDrmProtection(video).then(result => {
         if (result.isDrm) {
-          console.log('[Football Ad Muter] 🔒 DRM PROTECTED CONTENT DETECTED - switching to DRM capture mode');
+          dlog('[Football Ad Muter] 🔒 DRM PROTECTED CONTENT DETECTED - switching to DRM capture mode');
           logActivity(`🔒 DRM content (${result.keySystem}) - using tab capture + audio signals`, 'warning');
           enterDrmMode(video);
           drmCheckPerformed = true;
         } else {
-          console.log('[Football Ad Muter] No DRM protection detected, continuing...');
+          dlog('[Football Ad Muter] No DRM protection detected, continuing...');
           drmCheckPerformed = true;
         }
       }).catch(error => {
@@ -633,7 +589,7 @@ function startMonitoring(callback) {
 
     // Detect if video element changed (e.g., ad vs content switch)
     if (lastVideoElement && lastVideoElement !== video) {
-      console.log('[Football Ad Muter] 🔄 Video element changed - different element detected');
+      dlog('[Football Ad Muter] 🔄 Video element changed - different element detected');
       logActivity('🔄 Video element changed', 'info');
       // Clear the muted flag from old video if it exists
       if (lastVideoElement.dataset.mutedByExtension === 'true') {
@@ -648,11 +604,11 @@ function startMonitoring(callback) {
     
     // Check if video is in a playable state
     if (video.paused) {
-      console.log('[Football Ad Muter] Video is paused, skipping capture');
+      dlog('[Football Ad Muter] Video is paused, skipping capture');
       return;
     }
     
-    console.log('[Football Ad Muter] Active video found:', {
+    dlog('[Football Ad Muter] Active video found:', {
       width: video.videoWidth,
       height: video.videoHeight,
       currentTime: video.currentTime.toFixed(2),
@@ -670,18 +626,18 @@ function startMonitoring(callback) {
     if ((video.currentTime >= 0.5 || (video.duration > 0 && video.currentTime / video.duration > 0.005)) && shouldCapture) {
       // Log queue status
       const queueStatus = requestQueue.getStatus();
-      console.log('[Football Ad Muter] Queue status:', queueStatus);
+      dlog('[Football Ad Muter] Queue status:', queueStatus);
       
       // Log sampler status
       const samplerStatus = adaptiveSampler.getStatus();
-      console.log('[Football Ad Muter] Sampler status:', samplerStatus);
+      dlog('[Football Ad Muter] Sampler status:', samplerStatus);
       
       captureAndAnalyzeVideo(video);
     } else if (!shouldCapture) {
-      console.log('[Football Ad Muter] Adaptive sampler says skip this frame (next in:', 
+      dlog('[Football Ad Muter] Adaptive sampler says skip this frame (next in:', 
         Math.round((adaptiveSampler.currentInterval - (Date.now() - adaptiveSampler.lastCaptureTime)) / 1000), 's)');
     } else {
-      console.log('[Football Ad Muter] Video just started, waiting for content to load... (currentTime:', video.currentTime.toFixed(3), 's)');
+      dlog('[Football Ad Muter] Video just started, waiting for content to load... (currentTime:', video.currentTime.toFixed(3), 's)');
     }
   }, Math.min(checkIntervalTime, 3000)); // Check more frequently than capture for adaptive timing
 
@@ -737,17 +693,17 @@ function stopMonitoring(opts = {}) {
   // Clear the request queue
   if (requestQueue) {
     requestQueue.clear();
-    console.log('[Football Ad Muter] Request queue cleared');
+    dlog('[Football Ad Muter] Request queue cleared');
   }
 
   // Reset adaptive sampler
   if (adaptiveSampler) {
     adaptiveSampler.reset();
-    console.log('[Football Ad Muter] Adaptive sampler reset');
+    dlog('[Football Ad Muter] Adaptive sampler reset');
   }
 
   if (opts.internal) {
-    console.log('[Football Ad Muter] Monitoring loop restarting internally');
+    dlog('[Football Ad Muter] Monitoring loop restarting internally');
     return;
   }
 
@@ -770,7 +726,7 @@ function stopMonitoring(opts = {}) {
   lastDecision = { state: 'idle', isGameplay: null, confidence: null, method: null, source: null, at: Date.now() };
   notifyFab();
 
-  console.log('[Football Ad Muter] Monitoring stopped');
+  dlog('[Football Ad Muter] Monitoring stopped');
   logActivity('⏹️ Monitoring stopped', 'info');
 }
 
@@ -784,7 +740,7 @@ function lockToVideo(video) {
   // Mark the video element with a data attribute for debugging
   video.dataset.lockedByExtension = 'true';
   
-  console.log('[Football Ad Muter] 🔒 Video locked:', {
+  dlog('[Football Ad Muter] 🔒 Video locked:', {
     width: video.videoWidth,
     height: video.videoHeight,
     src: (video.src || video.currentSrc || 'no src').substring(0, 100)
@@ -802,7 +758,7 @@ function unlockVideo() {
   lockedVideo = null;
   videoLockEnabled = false;
   
-  console.log('[Football Ad Muter] 🔓 Video unlocked');
+  dlog('[Football Ad Muter] 🔓 Video unlocked');
 }
 
 // Check if a video element is still valid (not removed from DOM)
@@ -811,13 +767,13 @@ function isVideoElementValid(video) {
   
   // Check if video is still in the DOM
   if (!document.contains(video)) {
-    console.log('[Football Ad Muter] Video element removed from DOM');
+    dlog('[Football Ad Muter] Video element removed from DOM');
     return false;
   }
   
   // Check if video still has valid dimensions
   if (video.videoWidth === 0 || video.videoHeight === 0) {
-    console.log('[Football Ad Muter] Video lost dimensions');
+    dlog('[Football Ad Muter] Video lost dimensions');
     return false;
   }
   
@@ -826,7 +782,7 @@ function isVideoElementValid(video) {
   if (!videoLockEnabled) {
     const rect = video.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
-      console.log('[Football Ad Muter] Video no longer visible');
+      dlog('[Football Ad Muter] Video no longer visible');
       return false;
     }
   }
@@ -834,38 +790,58 @@ function isVideoElementValid(video) {
   return true;
 }
 
-function getActiveVideo() {
+// getActiveVideo() used to rescan the DOM and call getComputedStyle on every
+// <video> on each monitoring tick *and* each 1.5s FAB status poll. The pick is
+// cached and reused while the element is still attached, has dimensions, and
+// (unless allowPaused) is playing; a pause, detach or the TTL expiring forces a
+// fresh selection, so ad/content element swaps are still noticed promptly.
+const VIDEO_CACHE_TTL_MS = 4000;
+let videoCache = { video: null, at: 0 };
+
+function getActiveVideo(opts = {}) {
+  const now = Date.now();
+  const v = videoCache.video;
+  if (v && now - videoCache.at < VIDEO_CACHE_TTL_MS && v.isConnected &&
+      v.videoWidth > 0 && (opts.allowPaused || !v.paused)) {
+    return v;
+  }
+  const picked = selectActiveVideo();
+  videoCache = { video: picked, at: now };
+  return picked;
+}
+
+function selectActiveVideo() {
   // Find the active video on the page
   let videos = Array.from(document.querySelectorAll('video'));
   
   // Site-specific optimizations
   if (currentSite.isPeacock && videos.length > 1) {
-    console.log('[Football Ad Muter] Peacock detected - applying Peacock-specific video selection');
+    dlog('[Football Ad Muter] Peacock detected - applying Peacock-specific video selection');
     // Peacock often has multiple videos, prefer the one that's actually visible and large
     videos = videos.filter(v => {
       const rect = v.getBoundingClientRect();
       return v.videoWidth > 100 && v.videoHeight > 100 && rect.width > 100 && rect.height > 100;
     });
-    console.log('[Football Ad Muter] After Peacock filter:', videos.length, 'videos remain');
+    dlog('[Football Ad Muter] After Peacock filter:', videos.length, 'videos remain');
   }
   
   if (currentSite.isYouTube) {
-    console.log('[Football Ad Muter] YouTube detected - looking for main video player');
+    dlog('[Football Ad Muter] YouTube detected - looking for main video player');
     // YouTube's main video is typically in .html5-video-container
     const youtubeVideo = document.querySelector('.html5-video-container video') || 
                         document.querySelector('.html5-main-video');
     if (youtubeVideo && youtubeVideo.videoWidth > 0) {
-      console.log('[Football Ad Muter] Found YouTube main video');
+      dlog('[Football Ad Muter] Found YouTube main video');
       return youtubeVideo;
     }
   }
   
-  console.log('[Football Ad Muter] Found', videos.length, 'video elements on page');
+  dlog('[Football Ad Muter] Found', videos.length, 'video elements on page');
   
   if (videos.length === 0) return null;
   
   // Log details about all videos found with visibility info
-  videos.forEach((video, index) => {
+  if (self.SAM_DEBUG) videos.forEach((video, index) => {
     const parentWithPlayerClass = video.closest('.player') || video.closest('[class*="player"]');
     const rect = video.getBoundingClientRect();
     const style = window.getComputedStyle(video);
@@ -875,7 +851,7 @@ function getActiveVideo() {
                      rect.width > 0 && 
                      rect.height > 0;
     
-    console.log(`[Football Ad Muter] Video ${index + 1}:`, {
+    dlog(`[Football Ad Muter] Video ${index + 1}:`, {
       width: video.videoWidth,
       height: video.videoHeight,
       area: video.videoWidth * video.videoHeight,
@@ -897,7 +873,7 @@ function getActiveVideo() {
   
   // Strategy 1: If multiple videos, look for one with "player-active" or similar active class
   if (videos.length > 1) {
-    console.log('[Football Ad Muter] Multiple videos found, looking for active indicators...');
+    dlog('[Football Ad Muter] Multiple videos found, looking for active indicators...');
     
     for (const video of videos) {
       // Check for various active indicators
@@ -909,13 +885,13 @@ function getActiveVideo() {
                                    video.closest('[data-active="true"]');
       
       if (parentWithActiveClass && video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('[Football Ad Muter] Found video with active indicator, area:', video.videoWidth * video.videoHeight);
-        console.log('[Football Ad Muter] Active element classes:', parentWithActiveClass.className);
+        dlog('[Football Ad Muter] Found video with active indicator, area:', video.videoWidth * video.videoHeight);
+        dlog('[Football Ad Muter] Active element classes:', parentWithActiveClass.className);
         return video;
       }
     }
     
-    console.log('[Football Ad Muter] No video with active class found, checking visibility and dimensions...');
+    dlog('[Football Ad Muter] No video with active class found, checking visibility and dimensions...');
   }
   
   // Strategy 2: Filter for videos that are visible and have good dimensions
@@ -934,7 +910,7 @@ function getActiveVideo() {
            video.readyState >= 1;
   });
   
-  console.log('[Football Ad Muter] Visible videos found:', visibleVideos.length);
+  dlog('[Football Ad Muter] Visible videos found:', visibleVideos.length);
   
   // Strategy 3: Among visible videos, prefer those that are actually playing
   const playingVideos = visibleVideos.filter(video => 
@@ -943,7 +919,7 @@ function getActiveVideo() {
     video.readyState >= 2
   );
   
-  console.log('[Football Ad Muter] Playing videos found:', playingVideos.length);
+  dlog('[Football Ad Muter] Playing videos found:', playingVideos.length);
   
   // Strategy 4: If we have playing videos, choose the largest one
   if (playingVideos.length > 0) {
@@ -960,7 +936,7 @@ function getActiveVideo() {
     });
     
     const selected = playingVideos[0];
-    console.log('[Football Ad Muter] Selected largest playing video, area:', selected.videoWidth * selected.videoHeight);
+    dlog('[Football Ad Muter] Selected largest playing video, area:', selected.videoWidth * selected.videoHeight);
     return selected;
   }
   
@@ -985,7 +961,7 @@ function getActiveVideo() {
     });
     
     const selected = visibleVideos[0];
-    console.log('[Football Ad Muter] Selected largest visible video (not playing), area:', selected.videoWidth * selected.videoHeight, 'readyState:', selected.readyState);
+    dlog('[Football Ad Muter] Selected largest visible video (not playing), area:', selected.videoWidth * selected.videoHeight, 'readyState:', selected.readyState);
     return selected;
   }
   
@@ -1002,18 +978,18 @@ function getActiveVideo() {
     });
     
     const selected = videosWithDimensions[0];
-    console.log('[Football Ad Muter] Last resort: selected video with dimensions, area:', selected.videoWidth * selected.videoHeight);
+    dlog('[Football Ad Muter] Last resort: selected video with dimensions, area:', selected.videoWidth * selected.videoHeight);
     return selected;
   }
   
-  console.log('[Football Ad Muter] No suitable video found, returning first video');
+  dlog('[Football Ad Muter] No suitable video found, returning first video');
   return videos[0];
 }
 
 // Function to detect DRM protection on video element
 async function checkForDrmProtection(video) {
   try {
-    console.log('[Football Ad Muter] Checking for DRM protection...');
+    dlog('[Football Ad Muter] Checking for DRM protection...');
     
     // Method 1: Check EME (Encrypted Media Extensions)
     if (navigator.requestMediaKeySystemAccess) {
@@ -1035,7 +1011,7 @@ async function checkForDrmProtection(video) {
           ]);
           
           if (access) {
-            console.log('[Football Ad Muter] 🔒 DRM DETECTED: ' + keySystem);
+            dlog('[Football Ad Muter] 🔒 DRM DETECTED: ' + keySystem);
             currentSite.isDrmProtected = true;
             saveDrmStatus(true, keySystem);
             return { isDrm: true, keySystem: keySystem };
@@ -1048,7 +1024,7 @@ async function checkForDrmProtection(video) {
     
     // Method 2: Check video element for encrypted content indicators
     if (video.mediaKeys) {
-      console.log('[Football Ad Muter] 🔒 DRM DETECTED: mediaKeys present on video element');
+      dlog('[Football Ad Muter] 🔒 DRM DETECTED: mediaKeys present on video element');
       currentSite.isDrmProtected = true;
       saveDrmStatus(true, 'mediaKeys');
       return { isDrm: true, keySystem: 'mediaKeys' };
@@ -1059,14 +1035,14 @@ async function checkForDrmProtection(video) {
     for (const source of sources) {
       const type = source.type || source.getAttribute('type') || '';
       if (type.includes('encrypted') || type.includes('drm')) {
-        console.log('[Football Ad Muter] 🔒 DRM DETECTED: Source type indicates DRM - ' + type);
+        dlog('[Football Ad Muter] 🔒 DRM DETECTED: Source type indicates DRM - ' + type);
         currentSite.isDrmProtected = true;
         saveDrmStatus(true, 'source-type');
         return { isDrm: true, keySystem: 'source-type' };
       }
     }
     
-    console.log('[Football Ad Muter] ✅ No DRM protection detected');
+    dlog('[Football Ad Muter] ✅ No DRM protection detected');
     currentSite.isDrmProtected = false;
     saveDrmStatus(false, null);
     return { isDrm: false, keySystem: null };
@@ -1094,7 +1070,7 @@ function saveDrmStatus(isDrm, keySystem) {
       console.error('[Football Ad Muter] Error saving DRM status:', chrome.runtime.lastError);
       return;
     }
-    console.log('[Football Ad Muter] DRM status saved:', drmStatus);
+    dlog('[Football Ad Muter] DRM status saved:', drmStatus);
   });
 }
 
@@ -1111,7 +1087,7 @@ function enterDrmMode(video) {
     try {
       window.__samSignals.start(video);
       drmSignalsStarted = true;
-      console.log('[Football Ad Muter] 🔊 DRM audio/DOM signal analysis started');
+      dlog('[Football Ad Muter] 🔊 DRM audio/DOM signal analysis started');
     } catch (e) {
       console.warn('[Football Ad Muter] Could not start DRM signals:', e.message);
     }
@@ -1263,7 +1239,7 @@ async function captureViaTabCapture(video) {
         return null;
       }
     } else if (shot && shot.error && shot.error !== 'not-visible') {
-      console.log('[Football Ad Muter] captureVisibleTab failed:', shot.error);
+      dlog('[Football Ad Muter] captureVisibleTab failed:', shot.error);
       lastCaptureNote = 'captureVisibleTab failed: ' + shot.error;
     } else {
       lastCaptureNote = shot ? 'Tab is not the visible tab in its window' : 'No response from background script (try reloading the extension)';
@@ -1275,7 +1251,7 @@ async function captureViaTabCapture(video) {
   refreshDrmCaptureStatus();
   if (!drmCaptureArmed) {
     lastCaptureNote = (lastCaptureNote ? lastCaptureNote + '; ' : '') + 'background capture is not armed';
-    console.log('[Football Ad Muter] Background DRM capture not enabled - using signals');
+    dlog('[Football Ad Muter] Background DRM capture not enabled - using signals');
     return null;
   }
 
@@ -1306,13 +1282,13 @@ async function captureViaTabCapture(video) {
     if (resp && resp.error === 'not-armed') {
       drmCaptureArmed = false;
     }
-    console.log('[Football Ad Muter] DRM frame capture failed:', resp && resp.error);
+    dlog('[Football Ad Muter] DRM frame capture failed:', resp && resp.error);
     lastCaptureNote = 'tab capture failed: ' + ((resp && resp.error) || 'no response');
     return null;
   }
 
   if (resp.black) {
-    console.log('[Football Ad Muter] ⬛ DRM frame is black (HDCP/L1 blackout) - falling back to signals');
+    dlog('[Football Ad Muter] ⬛ DRM frame is black (HDCP/L1 blackout) - falling back to signals');
     logActivity('⬛ Protected frame unreadable (black) - using audio/DOM signals', 'warning');
     return null;
   }
@@ -1324,7 +1300,7 @@ async function captureViaTabCapture(video) {
 function decideFromSignalsOnly(video) {
   const s = window.__samSignals && window.__samSignals.read();
   if (!s || !s.combined || s.combined.likelyAd === null) {
-    console.log('[Football Ad Muter] DRM signals inconclusive, no action');
+    dlog('[Football Ad Muter] DRM signals inconclusive, no action');
     return;
   }
 
@@ -1371,37 +1347,14 @@ function decideFromSignalsOnly(video) {
   notifyFab();
 }
 
-// Helper function to check if canvas has actual video content
-function checkCanvasContent(ctx, width, height) {
-  const imageData = ctx.getImageData(0, 0, Math.min(width, 100), Math.min(height, 100));
-  const pixels = imageData.data;
-  let hasVideoContent = false;
-  let pixelVariance = 0;
-  
-  // Sample pixels to check for content
-  for (let i = 0; i < pixels.length; i += 16) { // Sample every 4th pixel
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
-    
-    // Check if pixel is not white (background) or pure black
-    if ((r !== 255 || g !== 255 || b !== 255) && (r > 5 || g > 5 || b > 5)) {
-      hasVideoContent = true;
-      pixelVariance++;
-    }
-  }
-  
-  return { hasVideoContent, pixelVariance, sampleSize: Math.floor(pixels.length / 16) };
-}
-
 // Method 1: Try ImageCapture API (modern browsers)
 async function captureWithImageCapture(video, maxWidth) {
-  console.log('[Football Ad Muter] Attempting Method 1: ImageCapture API');
+  dlog('[Football Ad Muter] Attempting Method 1: ImageCapture API');
 
   let track = null;
   try {
     if (!('captureStream' in video)) {
-      console.log('[Football Ad Muter] captureStream not available on video element');
+      dlog('[Football Ad Muter] captureStream not available on video element');
       return null;
     }
 
@@ -1409,7 +1362,7 @@ async function captureWithImageCapture(video, maxWidth) {
     track = stream.getVideoTracks()[0];
 
     if (!track) {
-      console.log('[Football Ad Muter] No video track available from stream');
+      dlog('[Football Ad Muter] No video track available from stream');
       return null;
     }
 
@@ -1436,11 +1389,11 @@ async function captureWithImageCapture(video, maxWidth) {
       canvas.toBlob(resolve, 'image/jpeg', 0.8);
     });
 
-    console.log('[Football Ad Muter] ✅ ImageCapture API successful, blob size:', blob?.size, 'bytes');
+    dlog('[Football Ad Muter] ✅ ImageCapture API successful, blob size:', blob?.size, 'bytes');
     return blob ? { blob, method: 'ImageCapture API' } : null;
 
   } catch (error) {
-    console.log('[Football Ad Muter] ImageCapture API failed:', error.message);
+    dlog('[Football Ad Muter] ImageCapture API failed:', error.message);
     return null;
   } finally {
     // Free the stream/track regardless of success, failure, or an early
@@ -1449,162 +1402,74 @@ async function captureWithImageCapture(video, maxWidth) {
   }
 }
 
-// Method 2: Try OffscreenCanvas (better performance)
+// Methods 2-4 differ only in which canvas type / draw source they use. They
+// used to be three copy-pasted bodies, each also reading pixels back with
+// getImageData just to log a "content analysis" whose result was ignored (a
+// forced GPU readback per capture). One helper now covers all three.
+function scaledSize(video, maxWidth) {
+  const width = Math.round(video.videoWidth > maxWidth ? maxWidth : video.videoWidth);
+  return { width, height: Math.max(1, Math.round(width * (video.videoHeight / video.videoWidth))) };
+}
+
 async function captureWithOffscreenCanvas(video, maxWidth) {
-  console.log('[Football Ad Muter] Attempting Method 2: OffscreenCanvas');
-  
+  if (typeof OffscreenCanvas === 'undefined') return null;
   try {
-    if (typeof OffscreenCanvas === 'undefined') {
-      console.log('[Football Ad Muter] OffscreenCanvas not available');
-      return null;
-    }
-    
-    const aspectRatio = video.videoHeight / video.videoWidth;
-    const width = video.videoWidth > maxWidth ? maxWidth : video.videoWidth;
-    const height = width * aspectRatio;
-    
-    const offscreen = new OffscreenCanvas(width, height);
-    const ctx = offscreen.getContext('2d');
-    
-    // Fill with white background first
+    const { width, height } = scaledSize(video, maxWidth);
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, height);
-    
-    // Draw the video frame
     ctx.drawImage(video, 0, 0, width, height);
-    
-    // Check content
-    const contentCheck = checkCanvasContent(ctx, width, height);
-    console.log('[Football Ad Muter] OffscreenCanvas content analysis:', contentCheck);
-    
-    if (!contentCheck.hasVideoContent || contentCheck.pixelVariance < 3) {
-      console.log('[Football Ad Muter] ⚠️ OffscreenCanvas has low/no video content, but continuing anyway');
-      // Continue anyway - might be a dark scene or DRM workaround needed
-    }
-    
-    const blob = await offscreen.convertToBlob({
-      type: 'image/jpeg',
-      quality: 0.8
-    });
-    
-    console.log('[Football Ad Muter] ✅ OffscreenCanvas successful, blob size:', blob.size, 'bytes');
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
     return { blob, method: 'OffscreenCanvas' };
-    
   } catch (error) {
-    console.log('[Football Ad Muter] OffscreenCanvas failed:', error.message);
+    dlog('[Football Ad Muter] OffscreenCanvas failed:', error.message);
     return null;
   }
 }
 
-// Method 3: Traditional Canvas with createImageBitmap (faster drawing)
-async function captureWithImageBitmap(video, maxWidth) {
-  console.log('[Football Ad Muter] Attempting Method 3: Canvas with createImageBitmap');
-  
+// Fallback: regular canvas. `useBitmap` draws via createImageBitmap first.
+async function captureWithCanvas(video, maxWidth, useBitmap) {
   try {
-    if (typeof createImageBitmap === 'undefined') {
-      console.log('[Football Ad Muter] createImageBitmap not available');
-      return null;
-    }
-    
-    const aspectRatio = video.videoHeight / video.videoWidth;
-    const width = video.videoWidth > maxWidth ? maxWidth : video.videoWidth;
-    const height = width * aspectRatio;
-    
+    if (useBitmap && typeof createImageBitmap === 'undefined') return null;
+    const { width, height } = scaledSize(video, maxWidth);
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
-    
-    // Fill with white background
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, height);
-    
-    // Create ImageBitmap for faster drawing
-    const imageBitmap = await createImageBitmap(video);
-    ctx.drawImage(imageBitmap, 0, 0, width, height);
-    imageBitmap.close(); // Clean up
-    
-    // Check content
-    const contentCheck = checkCanvasContent(ctx, width, height);
-    console.log('[Football Ad Muter] ImageBitmap content analysis:', contentCheck);
-    
-    if (!contentCheck.hasVideoContent || contentCheck.pixelVariance < 3) {
-      console.log('[Football Ad Muter] ⚠️ ImageBitmap canvas has low/no video content, but continuing anyway');
-      // Continue anyway - might be a dark scene or DRM workaround needed
+    if (useBitmap) {
+      const bitmap = await createImageBitmap(video);
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      bitmap.close();
+    } else {
+      ctx.drawImage(video, 0, 0, width, height);
     }
-    
-    const blob = await new Promise((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.8);
-    });
-    
-    console.log('[Football Ad Muter] ✅ ImageBitmap method successful, blob size:', blob?.size, 'bytes');
-    return blob ? { blob, method: 'Canvas with ImageBitmap' } : null;
-    
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+    return blob ? { blob, method: useBitmap ? 'Canvas with ImageBitmap' : 'Traditional Canvas' } : null;
   } catch (error) {
-    console.log('[Football Ad Muter] ImageBitmap method failed:', error.message);
-    return null;
-  }
-}
-
-// Method 4: Traditional Canvas (most compatible fallback)
-async function captureWithTraditionalCanvas(video, maxWidth) {
-  console.log('[Football Ad Muter] Attempting Method 4: Traditional Canvas (fallback)');
-  
-  try {
-    const aspectRatio = video.videoHeight / video.videoWidth;
-    const width = video.videoWidth > maxWidth ? maxWidth : video.videoWidth;
-    const height = width * aspectRatio;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    
-    // Fill with white background
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, width, height);
-    
-    // Draw the video frame
-    ctx.drawImage(video, 0, 0, width, height);
-    
-    // Check content
-    const contentCheck = checkCanvasContent(ctx, width, height);
-    console.log('[Football Ad Muter] Traditional canvas content analysis:', contentCheck);
-    
-    if (!contentCheck.hasVideoContent || contentCheck.pixelVariance < 3) {
-      console.log('[Football Ad Muter] ⚠️ Traditional canvas has low/no video content, but continuing anyway');
-      // Continue anyway - might be a dark scene or DRM workaround needed
-    }
-    
-    const blob = await new Promise((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.8);
-    });
-    
-    console.log('[Football Ad Muter] ✅ Traditional Canvas successful, blob size:', blob?.size, 'bytes');
-    return blob ? { blob, method: 'Traditional Canvas' } : null;
-    
-  } catch (error) {
-    console.log('[Football Ad Muter] Traditional Canvas failed:', error.message);
+    dlog('[Football Ad Muter] Canvas capture failed:', error.message);
     return null;
   }
 }
 
 // Main capture function with multiple fallback methods
 async function captureVideoFrame(video, maxWidth = 800) {
-  console.log('[Football Ad Muter] Starting multi-method video frame capture...');
+  dlog('[Football Ad Muter] Starting multi-method video frame capture...');
   
   // Try each method in order until one succeeds
   const methods = [
     captureWithImageCapture,
     captureWithOffscreenCanvas,
-    captureWithImageBitmap,
-    captureWithTraditionalCanvas
+    (v, w) => captureWithCanvas(v, w, true),
+    (v, w) => captureWithCanvas(v, w, false)
   ];
   
   for (const method of methods) {
     const result = await method(video, maxWidth);
     if (result) {
-      console.log('[Football Ad Muter] 🎉 Successfully captured frame using:', result.method);
+      dlog('[Football Ad Muter] 🎉 Successfully captured frame using:', result.method);
       return result;
     }
   }
@@ -1617,7 +1482,7 @@ function captureAndAnalyzeVideo(video) {
   // In DRM mode the frame comes from the background tab-capture stream, not
   // this element, so skip requestVideoFrameCallback (it may never fire).
   if (currentSite.isDrmProtected) {
-    console.log('[Football Ad Muter] 📹 DRM mode capture');
+    dlog('[Football Ad Muter] 📹 DRM mode capture');
     performCapture(video);
     return;
   }
@@ -1625,8 +1490,8 @@ function captureAndAnalyzeVideo(video) {
   // Use requestVideoFrameCallback for precise timing if available
   if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
     video.requestVideoFrameCallback((now, metadata) => {
-      console.log('[Football Ad Muter] 📹 Capturing at exact video frame (requestVideoFrameCallback)');
-      console.log('[Football Ad Muter] Frame metadata:', {
+      dlog('[Football Ad Muter] 📹 Capturing at exact video frame (requestVideoFrameCallback)');
+      dlog('[Football Ad Muter] Frame metadata:', {
         presentationTime: metadata.presentationTime,
         expectedDisplayTime: metadata.expectedDisplayTime,
         width: metadata.width,
@@ -1636,18 +1501,52 @@ function captureAndAnalyzeVideo(video) {
       performCapture(video);
     });
   } else {
-    console.log('[Football Ad Muter] 📹 Capturing immediately (requestVideoFrameCallback not available)');
+    dlog('[Football Ad Muter] 📹 Capturing immediately (requestVideoFrameCallback not available)');
     performCapture(video);
   }
 }
 
+// Reused 32x32 canvas for the cheap scene-change signature.
+let sigCanvas = null;
+function getSigCanvas() {
+  if (!sigCanvas) {
+    sigCanvas = document.createElement('canvas');
+    sigCanvas.width = 32;
+    sigCanvas.height = 32;
+    sigCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  return sigCanvas;
+}
+
+// Scene-change check. Returns { similar, similarity } or null if it can't be
+// computed. For non-DRM video the signature is drawn straight from the
+// <video>, so an unchanged frame never pays for JPEG encode + decode +
+// base64. `source` may also be an ImageBitmap (DRM path).
+async function checkFrameUnchanged(source) {
+  if (adaptiveSampler.isAdDetected) return null; // need the real answer during ads
+  try {
+    const canvas = getSigCanvas();
+    canvas.getContext('2d').drawImage(source, 0, 0, 32, 32);
+    return await adaptiveSampler.analyzeFrameSimilarity(canvas);
+  } catch (e) {
+    return null; // tainted/unreadable - just analyse the frame
+  }
+}
+
+function skipUnchangedFrame(check) {
+  dlog(`[Football Ad Muter] Frame unchanged (${(check.similarity * 100).toFixed(1)}% similar) - skipping API call`);
+  logActivity(`⏭️ Skipped analysis - unchanged frame (${(check.similarity * 100).toFixed(0)}% similar)`, 'info');
+  lastCapture = { at: Date.now(), method: lastCapture.method, skipped: true };
+  notifyFab();
+}
+
 async function performCapture(video) {
   try {
-    console.log('[Football Ad Muter] Starting video capture and analysis...');
+    dlog('[Football Ad Muter] Starting video capture and analysis...');
     
     // Check if video is ready and has valid dimensions
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
-      console.log('[Football Ad Muter] Video not ready - no dimensions available:', {
+      dlog('[Football Ad Muter] Video not ready - no dimensions available:', {
         videoWidth: video?.videoWidth,
         videoHeight: video?.videoHeight,
         readyState: video?.readyState
@@ -1658,12 +1557,12 @@ async function performCapture(video) {
     
     // Check if video has loaded enough data
     if (video.readyState < 1) {
-      console.log('[Football Ad Muter] Video not ready - insufficient data loaded. ReadyState:', video.readyState);
+      dlog('[Football Ad Muter] Video not ready - insufficient data loaded. ReadyState:', video.readyState);
       saveLogEntry(null, 'Video not ready for capture - loading data');
       return;
     }
     
-    console.log('[Football Ad Muter] Video state:', {
+    dlog('[Football Ad Muter] Video state:', {
       currentTime: video.currentTime,
       duration: video.duration,
       paused: video.paused,
@@ -1675,6 +1574,7 @@ async function performCapture(video) {
     // Try to capture the video frame. DRM content can't be read via in-page
     // canvas, so route through the background tab-capture path instead.
     let captureResult;
+    let preChecked = false; // signature already compared against the video
     if (currentSite.isDrmProtected) {
       captureResult = await captureViaTabCapture(video);
       if (!captureResult) {
@@ -1684,6 +1584,14 @@ async function performCapture(video) {
         return;
       }
     } else {
+      const pre = await checkFrameUnchanged(video);
+      if (pre && pre.similar) {
+        adaptiveSampler.markCapture();
+        lastCapture = { at: Date.now(), method: lastCapture.method, skipped: false };
+        skipUnchangedFrame(pre);
+        return;
+      }
+      preChecked = !!pre;
       captureResult = await captureVideoFrame(video, 800);
     }
 
@@ -1711,43 +1619,31 @@ async function performCapture(video) {
       return;
     }
     
-    console.log('[Football Ad Muter] Successfully captured frame using:', captureResult.method);
+    dlog('[Football Ad Muter] Successfully captured frame using:', captureResult.method);
 
     // Mark this capture in the adaptive sampler
     adaptiveSampler.markCapture();
     lastCapture = { at: Date.now(), method: captureResult.method, skipped: false };
     notifyFab();
 
-    // Cheap local scene-change check before spending an API call: if this
-    // frame is a near-duplicate of the last one, skip the network round-trip
-    // and leave the current mute state as-is. Never skip while an ad is
-    // playing though - that's exactly the state where a same-looking frame
-    // could still mean "the ad just ended" and we need the real answer.
-    if (!adaptiveSampler.isAdDetected) {
+    // DRM frames can't be drawn from the <video>, so compare the captured
+    // blob instead (non-DRM frames were already compared before encoding).
+    if (!preChecked) {
       try {
-        const sigBitmap = await createImageBitmap(captureResult.blob);
-        const sigCanvas = document.createElement('canvas');
-        sigCanvas.width = 32;
-        sigCanvas.height = 32;
-        sigCanvas.getContext('2d').drawImage(sigBitmap, 0, 0, 32, 32);
-        sigBitmap.close();
-
-        const { similar, similarity } = await adaptiveSampler.analyzeFrameSimilarity(sigCanvas);
-        if (similar) {
-          console.log(`[Football Ad Muter] Frame unchanged (${(similarity * 100).toFixed(1)}% similar) - skipping API call`);
-          logActivity(`⏭️ Skipped analysis - unchanged frame (${(similarity * 100).toFixed(0)}% similar)`, 'info');
-          lastCapture.skipped = true;
-          notifyFab();
+        const bitmap = await createImageBitmap(captureResult.blob);
+        const check = await checkFrameUnchanged(bitmap);
+        bitmap.close();
+        if (check && check.similar) {
+          skipUnchangedFrame(check);
           return;
         }
       } catch (sigError) {
-        // Pure optimization - never let it block the real analysis.
-        console.warn('[Football Ad Muter] Frame similarity check failed, continuing with analysis:', sigError.message);
+        dlog('[Football Ad Muter] Frame similarity check failed, continuing with analysis:', sigError.message);
       }
     }
 
     // logActivity(`📸 Frame captured (${captureResult.method})`, 'info');
-    console.log('[Football Ad Muter] Converting blob to base64...');
+    dlog('[Football Ad Muter] Converting blob to base64...');
     
     const reader = new FileReader();
     
@@ -1759,7 +1655,7 @@ async function performCapture(video) {
     reader.onloadend = async () => {
       try {
         const base64Image = reader.result.split(',')[1];
-        console.log('[Football Ad Muter] Image converted to base64, length:', base64Image.length, 'characters');
+        dlog('[Football Ad Muter] Image converted to base64, length:', base64Image.length, 'characters');
         
         // Log the frame capture with the image data
         // logActivityWithImage(`📸 Frame captured (${captureResult.method})`, 'info', reader.result);
@@ -1772,14 +1668,13 @@ async function performCapture(video) {
         const requestId = requestQueue.enqueue({
           priority: adaptiveSampler.isAdDetected ? 2 : 1, // Higher priority during ads
           data: {
-            base64Image: base64Image,
             ollamaUrl: ollamaUrl,
             captureMethod: captureResult.method,
             imageDataUrl: reader.result
           },
           handler: async (data) => {
             // This handler will be called by the queue when it's time to process
-            console.log('[Football Ad Muter] Processing queued request, sending to background...');
+            dlog('[Football Ad Muter] Processing queued request, sending to background...');
             
             return new Promise((resolve, reject) => {
               const timeout = setTimeout(() => {
@@ -1788,7 +1683,7 @@ async function performCapture(video) {
               
               chrome.runtime.sendMessage({
                 action: 'analyzeImage',
-                base64Image: data.base64Image,
+                base64Image: data.imageDataUrl.split(',')[1],
                 ollamaUrl: ollamaUrl
               }, (response) => {
                 clearTimeout(timeout);
@@ -1824,7 +1719,7 @@ async function performCapture(video) {
           }
         });
         
-        console.log('[Football Ad Muter] Request queued with ID:', requestId);
+        dlog('[Football Ad Muter] Request queued with ID:', requestId);
         
       } catch (messageError) {
         console.error('[Football Ad Muter] Error queueing request:', messageError);
@@ -1842,7 +1737,7 @@ async function performCapture(video) {
 
 // Handle analysis results from the queue
 function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
-  console.log('[Football Ad Muter] Received response from background:', response);
+  dlog('[Football Ad Muter] Received response from background:', response);
   
   if (!response) {
     console.error('[Football Ad Muter] No response received from background script');
@@ -1862,7 +1757,7 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   }
   
   const isGameplay = response.result;
-  console.log('[Football Ad Muter] Analysis result:', isGameplay);
+  dlog('[Football Ad Muter] Analysis result:', isGameplay);
   
   // Update adaptive sampler with the result
   adaptiveSampler.updateStrategy(response);
@@ -1881,28 +1776,28 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   if (isGameplay === false) {
     // Mute the video
     if (!video.muted) {
-      console.log('[Football Ad Muter] 🔇 MUTING VIDEO - Advertisement detected');
+      dlog('[Football Ad Muter] 🔇 MUTING VIDEO - Advertisement detected');
       logActivity(`🔇 MUTING - Advertisement detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'warning');
       video.muted = true;
       video.dataset.mutedByExtension = 'true';
       action = `Video muted (advertisement detected) - Method: ${captureMethod}`;
     } else {
-      console.log('[Football Ad Muter] Video already muted, advertisement still detected');
+      dlog('[Football Ad Muter] Video already muted, advertisement still detected');
     }
   } else if (isGameplay === true) {
     // Unmute if we muted it
     if (video.dataset.mutedByExtension === 'true') {
-      console.log('[Football Ad Muter] 🔊 UNMUTING VIDEO - Gameplay detected');
+      dlog('[Football Ad Muter] 🔊 UNMUTING VIDEO - Gameplay detected');
       logActivity(`🔊 UNMUTING - Gameplay detected${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'success');
       video.muted = false;
       delete video.dataset.mutedByExtension;
       action = `Video unmuted (gameplay detected) - Method: ${captureMethod}`;
     } else {
-      console.log('[Football Ad Muter] Gameplay detected, video not muted by extension');
+      dlog('[Football Ad Muter] Gameplay detected, video not muted by extension');
       logActivity(`✓ Gameplay confirmed${llmResponseText ? ' | LLM: ' + llmResponseText : ''}`, 'info');
     }
   } else {
-    console.log('[Football Ad Muter] Analysis returned null/undefined - no action taken');
+    dlog('[Football Ad Muter] Analysis returned null/undefined - no action taken');
     logActivity('⚠️ Analysis inconclusive', 'warning');
   }
   
@@ -1935,50 +1830,50 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   
   // Log sampler statistics
   const samplerStats = adaptiveSampler.getStats();
-  console.log('[Football Ad Muter] Sampler stats:', samplerStats);
+  dlog('[Football Ad Muter] Sampler stats:', samplerStats);
 }
 
 
 
 function resetVideoPlayer() {
-  console.log('[Football Ad Muter] Resetting video player...');
+  dlog('[Football Ad Muter] Resetting video player...');
   
   const videos = Array.from(document.querySelectorAll('video'));
-  console.log('[Football Ad Muter] Found', videos.length, 'video elements to reset');
+  dlog('[Football Ad Muter] Found', videos.length, 'video elements to reset');
   
   if (videos.length === 0) {
-    console.log('[Football Ad Muter] No video elements found to reset');
+    dlog('[Football Ad Muter] No video elements found to reset');
     return;
   }
   
   videos.forEach((video, index) => {
-    console.log(`[Football Ad Muter] Resetting video ${index + 1}...`);
+    dlog(`[Football Ad Muter] Resetting video ${index + 1}...`);
     
     // Remove any extension-specific data attributes
     if (video.dataset.mutedByExtension) {
       delete video.dataset.mutedByExtension;
-      console.log(`[Football Ad Muter] Removed mutedByExtension flag from video ${index + 1}`);
+      dlog(`[Football Ad Muter] Removed mutedByExtension flag from video ${index + 1}`);
     }
     
     // Unmute the video if it's currently muted
     if (video.muted) {
       video.muted = false;
-      console.log(`[Football Ad Muter] Unmuted video ${index + 1}`);
+      dlog(`[Football Ad Muter] Unmuted video ${index + 1}`);
     }
     
     // Reset volume to a reasonable level if it's very low
     if (video.volume < 0.1) {
       video.volume = 0.8;
-      console.log(`[Football Ad Muter] Reset volume to 0.8 for video ${index + 1}`);
+      dlog(`[Football Ad Muter] Reset volume to 0.8 for video ${index + 1}`);
     }
     
     // If the video is paused and has some duration, try to resume playback
     if (video.paused && video.duration > 0 && video.currentTime > 0) {
       try {
         video.play();
-        console.log(`[Football Ad Muter] Resumed playback for video ${index + 1}`);
+        dlog(`[Football Ad Muter] Resumed playback for video ${index + 1}`);
       } catch (error) {
-        console.log(`[Football Ad Muter] Could not resume playback for video ${index + 1}:`, error.message);
+        dlog(`[Football Ad Muter] Could not resume playback for video ${index + 1}:`, error.message);
       }
     }
   });
@@ -1986,60 +1881,39 @@ function resetVideoPlayer() {
   // Log the reset action
   saveLogEntry(null, `Video player reset - ${videos.length} video(s) processed`);
   logActivity(`🔄 Video player reset (${videos.length} video(s))`, 'success');
-  console.log('[Football Ad Muter] Video player reset complete');
+  dlog('[Football Ad Muter] Video player reset complete');
 }
 
-function saveLogEntry(result, action, imageDataUrl = null, llmResponse = null) {
-  const logEntry = {
-    timestamp: Date.now(),
-    result: result,
-    action: action,
-    imageUrl: imageDataUrl,
-    llmResponse: llmResponse
-  };
-  
-  console.log('[Football Ad Muter] 💾 Saving log entry:', {
-    timestamp: logEntry.timestamp,
-    result: logEntry.result,
-    action: logEntry.action,
-    hasImage: !!imageDataUrl,
-    hasLLMResponse: !!llmResponse
-  });
-  
-  // Use storage.local instead of storage.sync because base64 images are too large
-  // storage.sync has 8KB per item limit, storage.local has ~10MB limit
-  chrome.storage.local.get(['analysisLogs'], (storage) => {
-    if (chrome.runtime.lastError) {
-      console.error('[Football Ad Muter] ❌ Error reading storage.local:', chrome.runtime.lastError);
-      return;
-    }
-    
-    const logs = storage.analysisLogs || [];
-    logs.push(logEntry);
-    
-    // Keep only the last 50 entries to prevent storage overflow (even local has limits)
-    const trimmedLogs = logs.slice(-50);
-    
-    console.log('[Football Ad Muter] Total logs in storage.local:', trimmedLogs.length);
-    
-    chrome.storage.local.set({ analysisLogs: trimmedLogs }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('[Football Ad Muter] ❌ Error saving to storage.local:', chrome.runtime.lastError.message);
-        console.error('[Football Ad Muter] Image size may be too large even for local storage');
-        return;
-      }
-      
-      console.log('[Football Ad Muter] ✅ Log entry saved to storage.local');
-      // Notify popup to refresh logs if it's open
-      try {
-        chrome.runtime.sendMessage({ action: 'logUpdate' }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.log('[Football Ad Muter] Could not notify popup (probably not open)');
-          }
-        });
-      } catch (error) {
-        console.log('[Football Ad Muter] Could not notify popup:', error.message);
-      }
+// Shrink a captured frame to a thumbnail before it goes into storage: the
+// full 800px JPEG is ~50-100KB, and 50 of them were re-serialised on every
+// write. Falls back to the original on any failure.
+async function toThumbnailDataUrl(dataUrl) {
+  try {
+    const bitmap = await createImageBitmap(base64ToBlob(dataUrl.split(',')[1]));
+    const scale = Math.min(1, SamLogStore.THUMB_WIDTH / bitmap.width);
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = new OffscreenCanvas(w, h);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: SamLogStore.THUMB_QUALITY });
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
     });
+  } catch (e) {
+    return dataUrl;
+  }
+}
+
+async function saveLogEntry(result, action, imageDataUrl = null, llmResponse = null) {
+  const timestamp = Date.now();
+  dlog('[Football Ad Muter] 💾 Saving log entry:', {
+    timestamp, result, action, hasImage: !!imageDataUrl, hasLLMResponse: !!llmResponse
   });
+
+  const imageUrl = imageDataUrl ? await toThumbnailDataUrl(imageDataUrl) : null;
+  analysisStore.append({ timestamp, result, action, imageUrl, llmResponse });
 }

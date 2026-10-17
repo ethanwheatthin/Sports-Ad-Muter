@@ -26,7 +26,7 @@ class RequestQueue {
       totalProcessingTime: 0
     };
     
-    console.log('[RequestQueue] Initialized with config:', {
+    dlog('[RequestQueue] Initialized with config:', {
       maxConcurrent: this.maxConcurrent,
       maxQueueSize: this.maxQueueSize,
       requestTimeout: this.requestTimeout,
@@ -55,7 +55,7 @@ class RequestQueue {
     this.queue.push(request);
     this.stats.totalRequests++;
     
-    console.log('[RequestQueue] Request enqueued:', {
+    dlog('[RequestQueue] Request enqueued:', {
       id: request.id,
       priority: request.priority,
       queueLength: this.queue.length,
@@ -83,14 +83,14 @@ class RequestQueue {
         const timeSinceLastRequest = Date.now() - this.lastRequestTime;
         if (timeSinceLastRequest < this.minTimeBetweenRequests) {
           const waitTime = this.minTimeBetweenRequests - timeSinceLastRequest;
-          console.log('[RequestQueue] Rate limiting - waiting', waitTime, 'ms');
+          dlog('[RequestQueue] Rate limiting - waiting', waitTime, 'ms');
           await this.delay(waitTime);
         }
         
         // Exponential backoff on consecutive failures
         if (this.consecutiveFailures > 0) {
           const backoffTime = Math.min(5000, 1000 * Math.pow(2, this.consecutiveFailures - 1));
-          console.log('[RequestQueue] Backoff after failures:', backoffTime, 'ms');
+          dlog('[RequestQueue] Backoff after failures:', backoffTime, 'ms');
           await this.delay(backoffTime);
         }
         
@@ -104,7 +104,7 @@ class RequestQueue {
         this.activeRequests++;
         this.lastRequestTime = Date.now();
         
-        console.log('[RequestQueue] Processing request:', {
+        dlog('[RequestQueue] Processing request:', {
           id: request.id,
           priority: request.priority,
           activeRequests: this.activeRequests,
@@ -131,7 +131,7 @@ class RequestQueue {
     const startTime = Date.now();
     
     try {
-      console.log('[RequestQueue] Executing request:', request.id);
+      dlog('[RequestQueue] Executing request:', request.id);
       
       // Set up timeout
       const timeoutPromise = new Promise((_, reject) => {
@@ -150,7 +150,7 @@ class RequestQueue {
         this.stats.totalProcessingTime / this.stats.completedRequests;
       this.consecutiveFailures = 0;
       
-      console.log('[RequestQueue] Request completed:', {
+      dlog('[RequestQueue] Request completed:', {
         id: request.id,
         processingTime: processingTime,
         averageTime: Math.round(this.stats.averageProcessingTime)
@@ -189,7 +189,7 @@ class RequestQueue {
   
   // Clear the queue
   clear() {
-    console.log('[RequestQueue] Clearing queue -', this.queue.length, 'requests dropped');
+    dlog('[RequestQueue] Clearing queue -', this.queue.length, 'requests dropped');
     
     // Notify all pending requests
     this.queue.forEach(request => {
@@ -228,7 +228,7 @@ class RequestQueue {
       this.minTimeBetweenRequests = options.minTimeBetweenRequests;
     }
     
-    console.log('[RequestQueue] Configuration updated:', {
+    dlog('[RequestQueue] Configuration updated:', {
       maxConcurrent: this.maxConcurrent,
       maxQueueSize: this.maxQueueSize,
       requestTimeout: this.requestTimeout,
@@ -238,7 +238,7 @@ class RequestQueue {
   
   // Reset statistics
   resetStats() {
-    console.log('[RequestQueue] Resetting statistics');
+    dlog('[RequestQueue] Resetting statistics');
     this.stats = {
       totalRequests: 0,
       completedRequests: 0,

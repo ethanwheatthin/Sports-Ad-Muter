@@ -26,7 +26,7 @@ class AdaptiveSampler {
       adaptiveIntervalChanges: 0
     };
     
-    console.log('[AdaptiveSampler] Initialized with config:', {
+    dlog('[AdaptiveSampler] Initialized with config:', {
       minInterval: this.minInterval,
       maxInterval: this.maxInterval,
       normalInterval: this.normalInterval,
@@ -45,7 +45,7 @@ class AdaptiveSampler {
     
     // Check if we've reached our adaptive interval
     if (timeSinceLastCapture >= this.currentInterval) {
-      console.log('[AdaptiveSampler] Capture triggered by interval:', {
+      dlog('[AdaptiveSampler] Capture triggered by interval:', {
         interval: this.currentInterval,
         timeSinceLastCapture: timeSinceLastCapture
       });
@@ -66,7 +66,7 @@ class AdaptiveSampler {
     const currentSignature = this.extractFrameSignature(canvas);
     const similarity = this.compareSignatures(this.lastFrameData, currentSignature);
     
-    console.log('[AdaptiveSampler] Frame similarity:', (similarity * 100).toFixed(1) + '%');
+    dlog('[AdaptiveSampler] Frame similarity:', (similarity * 100).toFixed(1) + '%');
     
     const isSimilar = similarity > (1 - this.sceneChangeThreshold);
     
@@ -76,7 +76,7 @@ class AdaptiveSampler {
     } else {
       this.consecutiveSimilarFrames = 0;
       this.stats.sceneChangesDetected++;
-      console.log('[AdaptiveSampler] Scene change detected!');
+      dlog('[AdaptiveSampler] Scene change detected!');
     }
     
     this.lastFrameData = currentSignature;
@@ -153,7 +153,7 @@ class AdaptiveSampler {
     if (analysisResult.result === false) {
       // Advertisement detected
       if (!this.isAdDetected) {
-        console.log('[AdaptiveSampler] Ad detected - increasing sampling rate');
+        dlog('[AdaptiveSampler] Ad detected - increasing sampling rate');
         this.isAdDetected = true;
         this.gameplayConfidence = 0;
         
@@ -168,7 +168,7 @@ class AdaptiveSampler {
       
       // If we're confident it's gameplay and frames are similar, slow down
       if (this.gameplayConfidence >= 3 && this.consecutiveSimilarFrames > 2) {
-        console.log('[AdaptiveSampler] Stable gameplay - decreasing sampling rate');
+        dlog('[AdaptiveSampler] Stable gameplay - decreasing sampling rate');
         this.currentInterval = Math.min(
           this.currentInterval + 2000,
           this.maxInterval
@@ -176,7 +176,7 @@ class AdaptiveSampler {
         this.stats.adaptiveIntervalChanges++;
       } else if (this.consecutiveSimilarFrames === 0) {
         // Scene changed during gameplay - sample more frequently temporarily
-        console.log('[AdaptiveSampler] Scene change during gameplay - maintaining higher rate');
+        dlog('[AdaptiveSampler] Scene change during gameplay - maintaining higher rate');
         this.currentInterval = this.normalInterval;
       }
     }
@@ -185,14 +185,14 @@ class AdaptiveSampler {
     if (analysisResult.processingTime) {
       if (analysisResult.processingTime > 5000) {
         // API is slow - reduce sampling rate
-        console.log('[AdaptiveSampler] API slow - reducing sampling rate');
+        dlog('[AdaptiveSampler] API slow - reducing sampling rate');
         this.currentInterval = Math.min(
           this.currentInterval + 1000,
           this.maxInterval
         );
       } else if (analysisResult.processingTime < 2000 && this.currentInterval > this.minInterval) {
         // API is fast - we can sample more frequently if needed
-        console.log('[AdaptiveSampler] API fast - allowing higher sampling rate');
+        dlog('[AdaptiveSampler] API fast - allowing higher sampling rate');
         this.currentInterval = Math.max(
           this.currentInterval - 500,
           this.minInterval
@@ -200,7 +200,7 @@ class AdaptiveSampler {
       }
     }
     
-    console.log('[AdaptiveSampler] Strategy updated:', {
+    dlog('[AdaptiveSampler] Strategy updated:', {
       currentInterval: this.currentInterval,
       isAdDetected: this.isAdDetected,
       gameplayConfidence: this.gameplayConfidence,
@@ -216,7 +216,7 @@ class AdaptiveSampler {
   
   // Reset the sampler state
   reset() {
-    console.log('[AdaptiveSampler] Resetting state');
+    dlog('[AdaptiveSampler] Resetting state');
     this.lastCaptureTime = 0;
     this.lastFrameData = null;
     this.currentInterval = this.normalInterval;
