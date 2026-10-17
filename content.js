@@ -41,6 +41,67 @@ let lastCapture = { at: 0, method: null, skipped: false };
 // Per-session counters for the FAB (reset each time monitoring starts).
 let sessionStats = { frames: 0, ads: 0, gameplay: 0, errors: 0 };
 
+// Session report (see session-report.js): every analysed frame is appended to a
+// text-only record in storage.local, one key per session, so a whole game can be
+// reviewed and exported after monitoring stops.
+let reportSession = null;
+
+function persistReportSession() {
+  if (!reportSession) return;
+  try {
+    chrome.storage.local.set({ [SamReport.sessionKey(reportSession.id)]: reportSession }, () => void chrome.runtime.lastError);
+  } catch (e) { /* extension context gone */ }
+}
+
+// Idempotent: the watchdog's internal restart goes through startMonitoring
+// again and must keep appending to the same session.
+function beginReportSession() {
+  if (reportSession) return;
+  const session = SamReport.newSession({ site: location.hostname, title: (document.title || '').slice(0, 120) });
+  reportSession = session;
+  try {
+    chrome.storage.sync.get(['apiProvider', 'detectionEngine'], (cfg) => {
+      session.meta.apiProvider = (cfg && cfg.apiProvider) || 'ollama';
+      session.meta.detectionEngine = (cfg && cfg.detectionEngine) || 'generative';
+      chrome.storage.local.get([SamReport.SESSION_INDEX_KEY], (st) => {
+        const ids = (st && st[SamReport.SESSION_INDEX_KEY]) || [];
+        const keys = ids.map(SamReport.sessionKey);
+        chrome.storage.local.get(keys, (old) => {
+          const updates = {};
+          // A session left open by a closed tab is ended at its last frame.
+          keys.forEach((k) => {
+            const s = old && old[k];
+            if (s && s.endedAt == null) updates[k] = SamReport.closeSession(s);
+          });
+          const { index, dropped } = SamReport.addToIndex(ids, session.id);
+          updates[SamReport.SESSION_INDEX_KEY] = index;
+          updates[SamReport.sessionKey(session.id)] = session;
+          chrome.storage.local.set(updates, () => void chrome.runtime.lastError);
+          if (dropped.length) chrome.storage.local.remove(dropped.map(SamReport.sessionKey), () => void chrome.runtime.lastError);
+        });
+      });
+    });
+  } catch (e) { /* extension context gone */ }
+}
+
+function recordReportFrame(frame) {
+  if (!frame || !reportSession) return;
+  reportSession.frames.push(frame);
+  persistReportSession();
+}
+
+function endReportSession() {
+  if (!reportSession) return;
+  reportSession.endedAt = Date.now();
+  persistReportSession();
+  reportSession = null;
+}
+
+function currentSampleIntervalMs() {
+  try { return adaptiveSampler ? adaptiveSampler.getStatus().currentInterval : checkIntervalTime; }
+  catch (e) { return null; }
+}
+
 // Build a status snapshot for the FAB widget / external callers.
 function getSamStatus() {
   let hasVideo = false;
@@ -499,6 +560,7 @@ function startMonitoring(callback) {
     lastDecision = { state: 'analyzing', isGameplay: null, confidence: null, method: null, source: null, engine: null, model: null, latencyMs: null, at: Date.now() };
   lastCapture = { at: 0, method: null, skipped: false };
   sessionStats = { frames: 0, ads: 0, gameplay: 0, errors: 0 };
+    beginReportSession();
     try { if (window.__samFab) window.__samFab.ensure(); } catch (e) {}
     notifyFab();
 
@@ -703,6 +765,7 @@ function stopMonitoring(opts = {}) {
   }
   drmCaptureArmed = false;
 
+  endReportSession();
   chrome.storage.sync.set({ isEnabled: false });
   lastDecision = { state: 'idle', isGameplay: null, confidence: null, method: null, source: null, at: Date.now() };
   notifyFab();
@@ -1304,6 +1367,7 @@ function decideFromSignalsOnly(video) {
   lastCapture = { at: Date.now(), method: 'signals', skipped: false };
   sessionStats.frames++;
   if (isAd) { if (prevState !== 'ad') sessionStats.ads++; } else { sessionStats.gameplay++; }
+  recordReportFrame(SamReport.frameFromSignal(s, currentSampleIntervalMs()));
   notifyFab();
 }
 
@@ -1791,6 +1855,7 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
     logActivity(`❌ API Error: ${response.error}`, 'error');
     saveLogEntry(null, `API Error: ${response.error}`, imageDataUrl, Object.assign({}, response, { captureMethod }));
     sessionStats.errors++;
+    recordReportFrame(SamReport.frameFromAnalysis(response, captureMethod, currentSampleIntervalMs()));
     lastDecision = { state: 'error', isGameplay: null, confidence: null, method: captureMethod || null, source: 'vision', engine: 'LLM', model: null, latencyMs: response.processingTime != null ? Math.round(response.processingTime) : null, error: response.error, at: Date.now() };
     notifyFab();
     return;
@@ -1862,6 +1927,7 @@ function handleAnalysisResult(response, imageDataUrl, captureMethod, video) {
   sessionStats.frames++;
   if (isGameplay === true) sessionStats.gameplay++;
   if (isGameplay === false && prevDecisionState !== 'ad') sessionStats.ads++;
+  recordReportFrame(SamReport.frameFromAnalysis(response, captureMethod, currentSampleIntervalMs()));
   notifyFab();
 
   // Save log entry with image data and full LLM response

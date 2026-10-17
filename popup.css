@@ -355,3 +355,24 @@ input[type=range] { width: 100%; accent-color: var(--brand); }
 .ollama-cmd-copy-btn { border: 1px solid #fcd34d; background: #fff; border-radius: 4px; padding: 2px 8px; font-size: 11px; }
 
 #donate-section { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 14px; }
+
+/* ---- Report tab ---- */
+.rep-bar { margin-bottom: 10px; }
+.rep-bar select { width: 100%; }
+.rep-hero {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 14px; text-align: center; margin-bottom: 10px;
+}
+.rep-hero-val { font-size: 40px; font-weight: 800; line-height: 1; color: var(--ad-dark); font-variant-numeric: tabular-nums; }
+.rep-hero-label { font-size: 12.5px; color: var(--text-2); margin-top: 4px; }
+.rep-hero-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.seg-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
+.seg-label { width: 34px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.seg-bar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--neutral-soft); }
+.seg-bar i { display: block; min-width: 0; }
+.seg-g { background: var(--brand); } .seg-a { background: var(--ad); } .seg-o { background: var(--text-muted); }
+.seg-val { margin-left: auto; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rep-resp { border-top: 1px solid var(--border); padding: 7px 0; }
+.rep-resp-top { display: flex; align-items: center; gap: 8px; }
+.rep-time { margin-left: auto; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+#reportFilters { margin-bottom: 4px; }

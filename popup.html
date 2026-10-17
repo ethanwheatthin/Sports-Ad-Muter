@@ -21,6 +21,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="live" role="tab">Live</button>
       <button class="tab" data-tab="history" role="tab">History <span class="tab-count" id="historyCount">0</span></button>
+      <button class="tab" data-tab="report" role="tab">Report</button>
       <button class="tab" data-tab="settings" role="tab">Settings</button>
     </nav>
   </header>
@@ -128,6 +129,19 @@
     </div>
   </main>
 
+  <!-- =========================== REPORT ============================ -->
+  <main class="pane" id="pane-report">
+    <div class="rep-bar">
+      <select id="reportSelect" aria-label="Monitoring session" disabled></select>
+      <div class="row-actions">
+        <button id="reportJsonBtn" class="btn-ghost" disabled>Export JSON</button>
+        <button id="reportCsvBtn" class="btn-ghost" disabled>Export CSV</button>
+        <button id="reportDeleteBtn" class="btn-ghost" disabled>Delete</button>
+      </div>
+    </div>
+    <div id="reportBody"><div class="no-logs">No sessions yet. Press Start on a game — a report is built as it runs.</div></div>
+  </main>
+
   <!-- ========================== SETTINGS =========================== -->
   <main class="pane" id="pane-settings">
 
@@ -228,5 +242,7 @@
 
   <script src="popup.js"></script>
   <script src="panel.js"></script>
+  <script src="session-report.js"></script>
+  <script src="report-view.js"></script>
 </body>
 </html>
