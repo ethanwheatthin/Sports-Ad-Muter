@@ -527,6 +527,10 @@ RESPOND: true OR false (nothing else)`
 const DEFAULT_PROMPT = SPORT_MODE_PROMPTS.general;
 
 // Load models from Ollama API and populate the model dropdown
+// Last known model choice. The <select> is empty while models load or if Ollama is
+// unreachable, and saving that blank value would wipe the stored model.
+let rememberedModel = '';
+
 async function loadModels(ollamaUrl, savedModel) {
   const select = document.getElementById('ollamaModel');
   const statusDiv = document.getElementById('modelStatus');
@@ -605,7 +609,8 @@ chrome.storage.sync.get(['ollamaUrl', 'checkInterval', 'isEnabled', 'drmStatus',
   updateProviderFieldsVisibility();
 
   // Load models from the saved URL, restoring previously selected model
-  loadModels(savedOllamaUrl, result.ollamaModel || '');
+  rememberedModel = result.ollamaModel || '';
+  loadModels(savedOllamaUrl, rememberedModel);
 
   const engineSelect = document.getElementById('detectionEngine');
   if (engineSelect) engineSelect.value = result.detectionEngine || 'generative';
@@ -807,6 +812,10 @@ function selectClefIfDecision(force) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
   }
 }
+const ollamaModelSelect = document.getElementById('ollamaModel');
+if (ollamaModelSelect) ollamaModelSelect.addEventListener('change', () => {
+  if (ollamaModelSelect.value) rememberedModel = ollamaModelSelect.value;
+});
 const detectionEngineSelect = document.getElementById('detectionEngine');
 if (detectionEngineSelect) detectionEngineSelect.addEventListener('change', () => selectClefIfDecision(true));
 
@@ -815,7 +824,7 @@ const refreshModelsBtn = document.getElementById('refreshModelsBtn');
 if (refreshModelsBtn) {
   refreshModelsBtn.addEventListener('click', () => {
     const url = document.getElementById('ollamaUrl').value || 'http://localhost:11434';
-    const currentModel = document.getElementById('ollamaModel').value;
+    const currentModel = document.getElementById('ollamaModel').value || rememberedModel;
     loadModels(url, currentModel);
   });
 }
@@ -826,7 +835,7 @@ const ollamaUrlInput = document.getElementById('ollamaUrl');
 if (ollamaUrlInput) {
   ollamaUrlInput.addEventListener('blur', () => {
     const url = (ollamaUrlInput.value || 'http://localhost:11434').trim().replace(/\/+$/, '');
-    const currentModel = document.getElementById('ollamaModel').value;
+    const currentModel = document.getElementById('ollamaModel').value || rememberedModel;
     loadModels(url, currentModel);
   });
 }
@@ -869,7 +878,7 @@ function collectSettings() {
       geminiModel: geminiModel,
       checkInterval: checkIntervalSeconds * 1000,
       customPrompt: customPrompt,
-      ollamaModel: document.getElementById('ollamaModel').value,
+      ollamaModel: document.getElementById('ollamaModel').value || rememberedModel,
       detectionEngine: document.getElementById('detectionEngine').value,
       sportMode: document.getElementById('sportMode').value
     }
